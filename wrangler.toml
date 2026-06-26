@@ -21,10 +21,12 @@ binding = "SESSION_KV"
 id = "GTWC_KV_ID"
 
 [vars]
-# Data source: "poller" = data is pushed in via /ingest from an external
-# poller running on a whitelisted IP (the timing FTP server blocks
-# Cloudflare's egress IPs, so the Worker cannot poll it directly).
-DATA_SOURCE = "poller"
+# Data source:
+#   "prosync" = Worker polls Swiss Timing's public ps-cache directly (no whitelist,
+#               no poller). This is the official live-timing backend.
+#   "poller"  = data pushed in via /ingest from an external SFTP poller.
+#   "worker-ftp" = Worker polls FTP itself (blocked by IP whitelist — legacy).
+DATA_SOURCE = "prosync"
 SRO_FTP_HOST = "xml-motorsport.sportresult.com"
 SRO_FTP_PORT = "21"
 SRO_FTP_USER = "racing-sro"

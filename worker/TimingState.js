@@ -2,6 +2,7 @@ import { DataStore } from './data-store.js';
 import { buildViewModel } from './timing-logic.js';
 import { parseXml } from './xml-parser.js';
 import { openFtp, findSessionsPerSeries, checkFilesForSession, probeFtp } from './ftp-cf.js';
+import { discover as prosyncDiscover, fetchUnit, buildSnapshot } from './prosync.js';
 
 // How long one burst keeps the FTP connection open (ms).
 // Longer = fewer reconnects = gentler on the connection-limited FTP server.
@@ -13,6 +14,10 @@ const CHECK_INTERVAL_MS = 2_000;
 const SESSION_SCAN_MS = 30_000;
 // Gap between bursts (ms) — short reconnect pause
 const BURST_GAP_MS = 2_000;
+// ProSync poll interval (ms) — direct HTTP poll of Swiss Timing ps-cache
+const PROSYNC_INTERVAL_MS = 2_000;
+// Re-discover the current meeting/units less often (ms)
+const PROSYNC_DISCOVER_MS = 20_000;
 
 export class TimingState {
   constructor(state, env) {
@@ -23,6 +28,8 @@ export class TimingState {
     this._lastDiag = null;
     this._activeSessions = null; // Map<seriesKey, {path,label}> from last discovery
     this._lastScanAt = 0;
+    this._prosyncDisc = null;    // last ProSync discovery result
+    this._prosyncDiscAt = 0;
 
     // Per-series state: Map<seriesKey, { store, sessionLabel, lastVersions }>
     this._series = new Map();
@@ -126,9 +133,10 @@ export class TimingState {
     if (url.pathname === '/api/series') {
       const result = {};
       for (const [key, s] of this._series) {
-        result[key] = { sessionLabel: s.sessionLabel, carCount: s.store.cars.size };
+        const carCount = s.snapshot ? s.snapshot.cars.length : (s.store?.cars.size || 0);
+        result[key] = { sessionLabel: s.sessionLabel, carCount };
       }
-      return Response.json({ configured: this._getSeriesKeys(), active: result });
+      return Response.json({ configured: this._getSeriesKeys(), active: result, dataSource: this._dataSource(), lastDiag: this._lastDiag });
     }
 
     return new Response('Not found', { status: 404 });
@@ -141,24 +149,79 @@ export class TimingState {
   // Data source: 'poller' = data arrives via /ingest from an external poller
   // (the Cloudflare egress IPs are blocked by the timing FTP server, so the
   // Worker cannot poll FTP itself). Any other value = Worker polls FTP itself.
+  _dataSource() {
+    return this.env.DATA_SOURCE || 'worker-ftp';
+  }
+
+  // Whether the DO should self-schedule polling (true for any pull mode).
   _ftpEnabled() {
-    return (this.env.DATA_SOURCE || 'worker-ftp') !== 'poller';
+    return this._dataSource() !== 'poller';
   }
 
   async alarm() {
-    if (!this._ftpEnabled()) return; // poller mode — no self-scheduling FTP
+    const mode = this._dataSource();
+    if (mode === 'poller') return; // data pushed in via /ingest — no polling
     if (this._polling) return;
-    if (this._probing) { await this._scheduleAlarm(BURST_GAP_MS); return; }
+    if (mode !== 'prosync' && this._probing) { await this._scheduleAlarm(BURST_GAP_MS); return; }
     this._polling = true;
     try {
-      await this._runBurst();
+      if (mode === 'prosync') {
+        await this._runProSyncPoll();
+      } else {
+        await this._runBurst();
+      }
     } catch (err) {
-      console.error('[TimingState] burst error:', err.message);
+      console.error('[TimingState] poll error:', err.message);
       this._lastDiag = { time: new Date().toISOString(), error: err.message, stack: err.stack };
     } finally {
       this._polling = false;
-      await this._scheduleAlarm(BURST_GAP_MS);
+      await this._scheduleAlarm(mode === 'prosync' ? PROSYNC_INTERVAL_MS : BURST_GAP_MS);
     }
+  }
+
+  // -----------------------------------------------------------------------
+  // ProSync poll (Swiss Timing ps-cache, direct HTTP — no whitelist needed)
+  // -----------------------------------------------------------------------
+
+  async _runProSyncPoll() {
+    const seriesKeys = this._getSeriesKeys();
+
+    // Re-discover the current meeting + live units periodically (cheap to skip)
+    if (!this._prosyncDisc || (Date.now() - this._prosyncDiscAt) > PROSYNC_DISCOVER_MS) {
+      const disc = await prosyncDiscover(seriesKeys);
+      if (disc) { this._prosyncDisc = disc; this._prosyncDiscAt = Date.now(); }
+    }
+    const disc = this._prosyncDisc;
+    if (!disc) { this._lastDiag = { time: new Date().toISOString(), error: 'ProSync discover returned null' }; return; }
+
+    let changed = false;
+    for (const key of seriesKeys) {
+      const u = disc.perSeries[key];
+      if (!u) continue;
+      const s = this._getOrCreateSeries(key);
+      if (!s.lapHistoryStore) s.lapHistoryStore = new Map();
+
+      const label = [disc.meetingName, u.competitionName, u.unitName].filter(Boolean).join(' › ');
+      if (label !== s.sessionLabel) {
+        if (s.sessionLabel && s.snapshot) {
+          await this._archiveSnapshotSession(key, s).catch(e => console.error('[archive]', e.message));
+        }
+        s.sessionLabel = label;
+        s.lapHistoryStore = new Map();
+      }
+
+      const { timing, detail } = await fetchUnit(disc.season, u.unitId);
+      if (!timing || !detail) continue;
+      s.snapshot = buildSnapshot({ timing, detail, sessionName: label, lapHistoryStore: s.lapHistoryStore });
+      changed = true;
+    }
+
+    this._lastDiag = {
+      time: new Date().toISOString(),
+      meeting: disc.meetingName,
+      detected: Object.entries(disc.perSeries).map(([k, v]) => ({ key: k, unit: v.unitName, comp: v.competitionName })),
+    };
+    if (changed) this._broadcast();
   }
 
   async _runBurst() {
@@ -297,8 +360,8 @@ export class TimingState {
     const conn = this.connections.get(ws) || { classFilter: null, series: this._defaultSeriesKey() };
     const seriesKey = conn.series || this._defaultSeriesKey();
     const s = this._series.get(seriesKey);
-    const store = s?.store || new DataStore();
-    const snapshot = store.getSnapshot(conn.classFilter);
+    // ProSync mode keeps a prebuilt snapshot; FTP/poller modes use the DataStore.
+    const snapshot = s?.snapshot || (s?.store || new DataStore()).getSnapshot(conn.classFilter);
     const vm = buildViewModel(snapshot, conn.classFilter);
     vm.sessionLabel = s?.sessionLabel || '';
     vm.series = seriesKey;
@@ -409,6 +472,40 @@ export class TimingState {
     await this.env.SESSION_KV.put('index', JSON.stringify(index));
 
     console.log(`[archive] Saved ${seriesKey} session "${s.sessionLabel}" (${carCount} cars)`);
+  }
+
+  // Archive a ProSync session straight from the prebuilt snapshot.
+  async _archiveSnapshotSession(seriesKey, s) {
+    if (!this.env.SESSION_KV || !s.sessionLabel || !s.snapshot) return;
+    const vm = buildViewModel(s.snapshot, null);
+    vm.sessionLabel = s.sessionLabel;
+    vm.series = seriesKey;
+
+    const carsDetail = s.snapshot.cars.map(car => ({
+      nr: car.nr,
+      drivers: car.drivers || [],
+      class: car.className,
+      team: car.team,
+      car: car.car,
+      lapHistory: car.lapHistory || [],
+      bestLap: car.bestLap || null,
+      _bestLapByDriver: car._bestLapByDriver || {},
+      _bestSectors: [],
+    }));
+
+    const id = slugify(`${seriesKey}-${s.sessionLabel}`) + '-' + Date.now();
+    const savedAt = new Date().toISOString();
+    await this.env.SESSION_KV.put(
+      `session:${id}`,
+      JSON.stringify({ id, label: s.sessionLabel, series: seriesKey, savedAt, carCount: carsDetail.length, vm, carsDetail }),
+      { expirationTtl: 60 * 60 * 24 * 90 }
+    );
+    const raw = await this.env.SESSION_KV.get('index');
+    const index = raw ? JSON.parse(raw) : [];
+    index.unshift({ id, label: s.sessionLabel, series: seriesKey, seriesLabel: seriesLabel(seriesKey), savedAt, carCount: carsDetail.length });
+    if (index.length > 100) index.splice(100);
+    await this.env.SESSION_KV.put('index', JSON.stringify(index));
+    console.log(`[archive] Saved ${seriesKey} ProSync session "${s.sessionLabel}" (${carsDetail.length} cars)`);
   }
 
   async _handleFtpDebug() {
