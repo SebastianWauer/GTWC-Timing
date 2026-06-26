@@ -1,0 +1,20 @@
+name = "gtwc-timing"
+main = "worker/index.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[durable_objects.bindings]]
+name = "TIMING_STATE"
+class_name = "TimingState"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["TimingState"]
+
+[vars]
+# INGEST_SECRET must be set via: wrangler secret put INGEST_SECRET
+# SRO credentials must be set via wrangler secret put (or in poller .env)

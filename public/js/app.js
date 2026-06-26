@@ -1,7 +1,7 @@
 'use strict';
 
 /* ---------------------------------------------------------------
-   Main App – Socket.IO client, state management, orchestration
+   Main App – native WebSocket client, state management, orchestration
    --------------------------------------------------------------- */
 
 let _vm = null;
@@ -9,7 +9,7 @@ let _selectedNr = null;
 let _selectedNrs = [];
 let _activeClass = null;
 let _sectorCount = 3;
-let _socket = null;
+let _socket = null;   // native WebSocket
 let _replayMode = false;
 const WIDE_LAYOUT_MIN_WIDTH = 1920;
 const WIDE_LAYOUT_SPLIT_SIZE = 38;
@@ -67,7 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
 window.AppControl = {
   enterReplay(vm, label) {
     _replayMode = true;
-    if (_socket) _socket.disconnect();
+    if (_socket) { try { _socket.close(); } catch (_) {} _socket = null; }
 
     document.getElementById('replay-banner').classList.remove('hidden');
     document.getElementById('replay-label').textContent = label || '';
@@ -90,46 +90,71 @@ window.AppControl = {
 };
 
 // -----------------------------------------------------------------------
-// Socket.IO
+// Native WebSocket (replaces Socket.IO)
 // -----------------------------------------------------------------------
+let _reconnectTimer = null;
+
 function connectSocket() {
   if (_socket) {
-    _socket.removeAllListeners();
-    _socket.connect();
-  } else {
-    _socket = io();
+    try { _socket.close(); } catch (_) {}
+    _socket = null;
   }
+  clearTimeout(_reconnectTimer);
 
-  _socket.on('connect', () => {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(`${proto}//${location.host}/ws`);
+  _socket = ws;
+
+  ws.addEventListener('open', () => {
     elStatusDot.className = 'connected';
     elStatusDot.title = 'Connected';
+    // Re-apply active class filter after reconnect
+    if (_activeClass) {
+      ws.send(JSON.stringify({ type: 'setClassFilter', data: _activeClass }));
+    }
   });
 
-  _socket.on('disconnect', () => {
+  ws.addEventListener('close', () => {
     if (_replayMode) return;
     elStatusDot.className = 'error';
     elStatusDot.title = 'Disconnected – reconnecting…';
+    _reconnectTimer = setTimeout(connectSocket, 3000);
   });
 
-  _socket.on('update', (vm) => {
-    if (_replayMode) return;
-    _vm = vm;
-    applyUpdate(vm);
+  ws.addEventListener('error', () => {
+    try { ws.close(); } catch (_) {}
   });
 
-  _socket.on('carDetail', (car) => {
+  ws.addEventListener('message', (event) => {
     if (_replayMode) return;
-    if (_vm && car.nr) {
-      const idx = _vm.cars.findIndex(c => c.nr === car.nr);
-      if (idx >= 0) {
-        _vm.cars[idx].lapHistory = car.lapHistory || [];
-        _vm.cars[idx].bestLapByDriver = car._bestLapByDriver || {};
-        _vm.cars[idx].bestSectorsByKey = car._bestSectors || {};
-        updateSidebar();
-        updateTimingChart();
+    let msg;
+    try { msg = JSON.parse(event.data); } catch { return; }
+
+    if (msg.type === 'update') {
+      _vm = msg.data;
+      applyUpdate(_vm);
+    }
+
+    if (msg.type === 'carDetail') {
+      const car = msg.data;
+      if (_vm && car.nr) {
+        const idx = _vm.cars.findIndex(c => c.nr === car.nr);
+        if (idx >= 0) {
+          _vm.cars[idx].lapHistory = car.lapHistory || [];
+          _vm.cars[idx].bestLapByDriver = car._bestLapByDriver || {};
+          _vm.cars[idx].bestSectorsByKey = car._bestSectors || {};
+          updateSidebar();
+          updateTimingChart();
+        }
       }
     }
   });
+}
+
+function socketSend(msg) {
+  if (_socket && _socket.readyState === WebSocket.OPEN) {
+    _socket.send(JSON.stringify(msg));
+  }
 }
 
 // -----------------------------------------------------------------------
@@ -214,10 +239,9 @@ function makeClassBtn(label, value, isActive) {
   }
   btn.addEventListener('click', () => {
     _activeClass = value;
-    if (!_replayMode && _socket) {
-      _socket.emit('setClassFilter', value);
-    } else if (_replayMode && _vm) {
-      // Client-side filter in replay mode
+    if (!_replayMode) {
+      socketSend({ type: 'setClassFilter', data: value });
+    } else if (_vm) {
       applyReplayFilter(value);
     }
     for (const b of elFilterBar.querySelectorAll('.class-btn')) b.classList.remove('active');
@@ -313,7 +337,7 @@ function updateSidebar() {
     }
   } else if (_selectedNr && _socket) {
     for (const nr of _selectedNrs) {
-      _socket.emit('getCarDetail', nr);
+      socketSend({ type: 'getCarDetail', data: nr });
     }
   }
   window.SidebarRenderer.renderSidebar(elSidebar, _vm, _selectedNr);
