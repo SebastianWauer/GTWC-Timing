@@ -3,12 +3,16 @@ import { buildViewModel } from './timing-logic.js';
 import { parseXml } from './xml-parser.js';
 import { openFtp, findSessionsPerSeries, checkFilesForSession } from './ftp-cf.js';
 
-// How long one burst keeps the FTP connection open (ms)
-const BURST_DURATION_MS = 25_000;
-// Delay between checks within a burst (ms)
+// How long one burst keeps the FTP connection open (ms).
+// Longer = fewer reconnects = gentler on the connection-limited FTP server.
+const BURST_DURATION_MS = 60_000;
+// Delay between file-poll checks within a burst (ms)
 const CHECK_INTERVAL_MS = 2_000;
-// Gap between bursts (ms)
-const BURST_GAP_MS = 1_000;
+// How often to re-walk the directory tree to discover sessions (ms).
+// The tree changes rarely; walking it is expensive (many PASV connections).
+const SESSION_SCAN_MS = 30_000;
+// Gap between bursts (ms) — short reconnect pause
+const BURST_GAP_MS = 2_000;
 
 export class TimingState {
   constructor(state, env) {
@@ -16,6 +20,8 @@ export class TimingState {
     this.env = env;
     this._polling = false;
     this._lastDiag = null;
+    this._activeSessions = null; // Map<seriesKey, {path,label}> from last discovery
+    this._lastScanAt = 0;
 
     // Per-series state: Map<seriesKey, { store, sessionLabel, lastVersions }>
     this._series = new Map();
@@ -146,35 +152,39 @@ export class TimingState {
     const burstEnd = Date.now() + BURST_DURATION_MS;
 
     try {
-      let firstScan = true;
       while (Date.now() < burstEnd) {
         const t0 = Date.now();
 
-        // Discover all active sessions per series on every burst check.
-        // Capture full structure on the first scan of each burst for debugging.
-        const diag = firstScan ? { time: new Date().toISOString() } : null;
-        const activeSessions = await findSessionsPerSeries(ftp, ftpConfig.root, seriesKeys, diag);
-        if (diag) {
-          diag.detected = Array.from(activeSessions.entries()).map(([k, v]) => ({ key: k, label: v.label }));
+        // --- Discovery: walk the directory tree only every SESSION_SCAN_MS ---
+        // The tree (events/competitions/sessions) changes rarely; only the
+        // file versions inside the active session change every second.
+        // Re-walking the whole tree every 2s opens far too many PASV data
+        // connections and gets the connection closed by the server.
+        if (!this._activeSessions || (Date.now() - (this._lastScanAt || 0)) > SESSION_SCAN_MS) {
+          const diag = { time: new Date().toISOString() };
+          this._activeSessions = await findSessionsPerSeries(ftp, ftpConfig.root, seriesKeys, diag);
+          diag.detected = Array.from(this._activeSessions.entries()).map(([k, v]) => ({ key: k, label: v.label }));
           this._lastDiag = diag;
-          firstScan = false;
+          this._lastScanAt = Date.now();
+
+          // Handle session changes detected during discovery
+          for (const [key, session] of this._activeSessions) {
+            const s = this._getOrCreateSeries(key);
+            if (session.label !== s.sessionLabel) {
+              if (s.sessionLabel) {
+                await this._archiveSeriesSession(key, s).catch(e => console.error('[archive]', e.message));
+                s.store.reset();
+                s.lastVersions = {};
+              }
+              s.sessionLabel = session.label;
+            }
+          }
         }
 
+        // --- File polling: only the known session paths (cheap) ---
         let anyChanged = false;
-        for (const [key, session] of activeSessions) {
+        for (const [key, session] of this._activeSessions) {
           const s = this._getOrCreateSeries(key);
-
-          // Session changed → archive old, reset
-          if (session.label !== s.sessionLabel) {
-            if (s.sessionLabel) {
-              await this._archiveSeriesSession(key, s).catch(e => console.error('[archive]', e.message));
-              s.store.reset();
-              s.lastVersions = {};
-            }
-            s.sessionLabel = session.label;
-          }
-
-          // Poll files for this series
           const { files, newVersions } = await checkFilesForSession(ftp, session.path, s.lastVersions);
           s.lastVersions = newVersions;
 
