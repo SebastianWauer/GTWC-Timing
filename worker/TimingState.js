@@ -74,7 +74,8 @@ export class TimingState {
       const classFilter = url.searchParams.get('class') || null;
       const s = this._series.get(seriesKey);
       if (!s) return Response.json({ cars: [], session: {}, classes: [] });
-      const vm = buildViewModel(s.store.getSnapshot(classFilter), classFilter);
+      const snapshot = s.snapshot || s.store?.getSnapshot(classFilter);
+      const vm = buildViewModel(snapshot, classFilter);
       vm.sessionLabel = s.sessionLabel;
       vm.series = seriesKey;
       return Response.json(vm);
@@ -84,7 +85,9 @@ export class TimingState {
       const nr = url.pathname.split('/').pop();
       const seriesKey = url.searchParams.get('series') || this._defaultSeriesKey();
       const s = this._series.get(seriesKey);
-      const car = s?.store.cars.get(nr);
+      const car = s?.snapshot
+        ? s.snapshot.cars.find(c => c.nr === String(nr))
+        : s?.store.cars.get(nr);
       if (!car) return new Response('Not found', { status: 404 });
       return Response.json(car);
     }
@@ -348,7 +351,10 @@ export class TimingState {
 
     if (msg.type === 'getCarDetail') {
       const s = this._series.get(conn.series || this._defaultSeriesKey());
-      const car = s?.store.cars.get(String(msg.data));
+      const nr = String(msg.data);
+      const car = s?.snapshot
+        ? s.snapshot.cars.find(c => c.nr === nr)
+        : s?.store.cars.get(nr);
       if (car) ws.send(JSON.stringify({ type: 'carDetail', data: car }));
     }
   }
