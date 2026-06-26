@@ -1,5 +1,6 @@
 name = "gtwc-timing"
 main = "worker/index.js"
+account_id = "26ef6c9066ca3d71dfd4bed75c5450dd"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
