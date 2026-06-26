@@ -142,6 +142,27 @@ const CLASS_NAME_MAP = {
   PAM: 'Pro-Am', 'PRO-AM': 'Pro-Am', PROAM: 'Pro-Am',
   AM: 'AM', SILVER: 'Silver', PRO: 'Pro', GOLD: 'Gold', BRONZE: 'Bronze',
 };
+// Swiss Timing manufacturer names → the keys used by the logo table.
+const MANUFACTURER_MAP = {
+  'BMW M': 'BMW',
+  'Mercedes': 'Mercedes-AMG',
+  'Mercedes AMG': 'Mercedes-AMG',
+};
+function normalizeManufacturer(name) {
+  const n = (name || '').trim();
+  return MANUFACTURER_MAP[n] || n;
+}
+
+// Format a ProSync gap value ("3.841", "1 Lap") for display ("+3.841", "+1 Lap").
+function fmtGap(v) {
+  if (v == null || v === '') return undefined;
+  const s = String(v).trim();
+  if (s === '0' || s === '0.000') return undefined;
+  if (/lap/i.test(s)) return s.startsWith('+') ? s : '+' + s;
+  if (/^\d/.test(s)) return '+' + s;
+  return s;
+}
+
 function normalizeClass(cls) {
   if (!cls) return '';
   const short = String(cls.ShortName || '').trim().toUpperCase();
@@ -220,7 +241,7 @@ export function buildSnapshot({ timing, detail, sessionName, lapHistoryStore }) 
       activeDriverName,
       team: comp.TeamName || '',
       car: comp.CarTypeName || '',
-      manufacturer: comp.ManufacturerName || '',
+      manufacturer: normalizeManufacturer(comp.ManufacturerName),
       lastLap: { raw: r.LastLap?.Time, ms: lastMs },
       bestLap: { raw: r.BestTime?.Time, ms: bestMs },
       bestLapNr: r.BestTime?.LapNumber ?? null,
@@ -229,7 +250,10 @@ export function buildSnapshot({ timing, detail, sessionName, lapHistoryStore }) 
       pitStops: comp.PitStopCount ?? 0,
       inPit: !!comp.InPitLane,
       status: r.Status,
-      gap: r.RankingTime || null,
+      gap: fmtGap(r.Behind),            // to overall leader
+      interval: fmtGap(r.Diff),         // to car ahead (overall)
+      classGap: fmtGap(r.ClassBehind),  // to class leader
+      classInterval: fmtGap(r.ClassDiff), // to car ahead in class
       totalTime: r.TotalTime || null,
       lapHistory,
       _bestLapByDriver: {},

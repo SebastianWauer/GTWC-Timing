@@ -53,8 +53,11 @@ export function classifyTimeColor(timeMs, driverBestMs, carBestMs, classBestMs, 
 
 export function computeGapInterval(cars, classFilter) {
   for (const car of cars) {
-    car.computedGap = car.gap !== undefined ? car.gap : '-';
-    car.computedInterval = car.interval !== undefined ? car.interval : '-';
+    // When a class is selected, prefer class-relative gap/interval if available.
+    const gap = classFilter && car.classGap !== undefined ? car.classGap : car.gap;
+    const interval = classFilter && car.classInterval !== undefined ? car.classInterval : car.interval;
+    car.computedGap = gap !== undefined ? gap : '-';
+    car.computedInterval = interval !== undefined ? interval : '-';
   }
 
   const workingList = classFilter
