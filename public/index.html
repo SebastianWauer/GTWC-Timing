@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GTWC Live Timing</title>
+  <link rel="stylesheet" href="/css/style.css?v=11">
+</head>
+<body>
+
+  <!-- ================================================================
+       Header: Session info, flag, timers
+       ================================================================ -->
+  <header id="header">
+    <div id="status-dot" title="Connecting…"></div>
+    <div id="session-name">GTWC Timing</div>
+    <span id="flag-status" class="flag-badge flag-GREEN">GREEN</span>
+    <div class="header-time-block">
+      <span class="label">Elapsed</span>
+      <span class="value" id="time-remaining">–:–:–</span>
+    </div>
+    <div class="header-time-block">
+      <span class="label">Local</span>
+      <span class="value" id="local-time">–:–:–</span>
+    </div>
+    <div class="header-time-block" style="min-width:60px">
+      <span class="label">Lap</span>
+      <span class="value" id="lap-info">–</span>
+    </div>
+    <div class="header-spacer"></div>
+    <button id="fullscreen-btn" title="Vollbild umschalten">Vollbild</button>
+    <button id="archive-btn" title="Session Archive" onclick="window.SessionArchive.open()">&#128196; Archive</button>
+  </header>
+
+  <!-- ================================================================
+       Replay Banner
+       ================================================================ -->
+  <div id="replay-banner" class="hidden">
+    <span id="replay-label"></span>
+    <button onclick="window.AppControl.exitReplay()">&#8592; Back to Live</button>
+  </div>
+
+  <!-- ================================================================
+       Class Filter Bar
+       ================================================================ -->
+  <div id="filter-bar">
+    <span class="filter-label">Class:</span>
+    <button class="class-btn active" style="background:#333;color:#eee">ALL</button>
+  </div>
+
+  <!-- ================================================================
+       Main: Table + Sidebar
+       ================================================================ -->
+  <div id="main">
+    <div id="table-container">
+      <div id="timing-grid">
+        <div class="timing-pane">
+          <table class="timing-table" id="timing-table-left">
+            <thead id="timing-thead-left"></thead>
+            <tbody id="timing-tbody-left"></tbody>
+          </table>
+        </div>
+        <div class="timing-pane" id="timing-pane-right">
+          <div class="timing-table-wrap" id="timing-table-wrap-right">
+            <table class="timing-table" id="timing-table-right">
+              <thead id="timing-thead-right"></thead>
+              <tbody id="timing-tbody-right"></tbody>
+            </table>
+          </div>
+          <div id="timing-chart-host"></div>
+        </div>
+      </div>
+    </div>
+
+    <aside id="sidebar">
+      <div class="sidebar-section">
+        <h3>Best Sectors</h3>
+        <div style="color:var(--color-text-muted);font-size:10px">Waiting for data…</div>
+      </div>
+      <div class="sidebar-section">
+        <h3>Manufacturers</h3>
+        <div style="color:var(--color-text-muted);font-size:10px">Waiting for data…</div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Scripts -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/colors.js?v=3"></script>
+  <script src="/js/table.js?v=4"></script>
+  <script src="/js/sidebar.js?v=11"></script>
+  <script src="/js/sessions.js?v=1"></script>
+  <script src="/js/app.js?v=10"></script>
+</body>
+</html>

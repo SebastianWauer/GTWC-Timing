@@ -1,0 +1,858 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* ============================================================
+   GTWC Timing Dashboard – Design Tokens & Layout
+   ============================================================ */
+
+:root {
+  /* Backgrounds */
+  --color-bg: #0d0d0d;
+  --color-surface: #141414;
+  --color-surface2: #1c1c1c;
+  --color-border: #2a2a2a;
+  --color-header-bg: #111;
+
+  /* Text */
+  --color-text: #e0e0e0;
+  --color-text-dim: #888;
+  --color-text-muted: #555;
+
+  /* Timing cell colours */
+  --color-time-purple: #c084fc;
+  --color-time-blue: #60a5fa;
+  --color-time-green: #4ade80;
+  --color-time-yellow: #facc15;
+
+  /* Status */
+  --color-inpit: #dc2626;
+  --color-pit-bg: rgba(220, 38, 38, 0.12);
+
+  /* Flags */
+  --color-flag-green: #16a34a;
+  --color-flag-yellow: #ca8a04;
+  --color-flag-red: #dc2626;
+  --color-flag-sc: #f97316;
+  --color-flag-white: #e5e7eb;
+
+  /* Class badge colours */
+  --class-pro-bg: #ffffff;
+  --class-pro-text: #000000;
+  --class-gold-bg: #d4a017;
+  --class-gold-text: #000000;
+  --class-silver-bg: #3a6bbf;
+  --class-silver-text: #ffffff;
+  --class-bronze-bg: #7b4f2e;
+  --class-bronze-text: #ffffff;
+  --class-proam-bg: #cc2233;
+  --class-proam-text: #ffffff;
+
+  /* Layout */
+  --sidebar-width: 439px;
+  --header-height: 48px;
+
+  font-size: 12px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ============================================================
+   Header
+   ============================================================ */
+#header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 12px;
+  height: var(--header-height);
+  background: var(--color-header-bg);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+}
+
+#session-name {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+
+.flag-badge {
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.flag-GREEN  { background: var(--color-flag-green); color: #fff; }
+.flag-YELLOW { background: var(--color-flag-yellow); color: #fff; }
+.flag-RED    { background: var(--color-flag-red); color: #fff; }
+.flag-SC     { background: var(--color-flag-sc); color: #fff; }
+.flag-VSC    { background: var(--color-flag-sc); color: #fff; }
+.flag-WHITE  { background: var(--color-flag-white); color: #111; }
+.flag-CHEQUERED { background: #222; color: #fff; border: 1px solid #fff; }
+
+.header-time-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 80px;
+}
+.header-time-block .label { font-size: 9px; color: var(--color-text-dim); text-transform: uppercase; }
+.header-time-block .value { font-size: 16px; font-weight: 700; letter-spacing: 1px; }
+
+.header-spacer { flex: 1; }
+
+/* ============================================================
+   Class Filter Bar
+   ============================================================ */
+#filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+#filter-bar .filter-label {
+  font-size: 10px;
+  color: var(--color-text-dim);
+  text-transform: uppercase;
+  margin-right: 4px;
+}
+
+.class-btn {
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  transition: opacity 0.15s;
+}
+.class-btn.active { border-color: #fff; }
+.class-btn:hover { opacity: 0.8; }
+
+/* ============================================================
+   Main Layout: table + sidebar
+   ============================================================ */
+#main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#table-container {
+  flex: 8;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+#timing-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  width: max-content;
+  min-width: 100%;
+}
+
+.timing-pane {
+  min-width: 0;
+  overflow: visible;
+}
+
+#timing-pane-right {
+  display: none;
+}
+
+#timing-chart-host { display: none; }
+
+#sidebar {
+  flex: 0 0 var(--sidebar-width);
+  width: var(--sidebar-width);
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ============================================================
+   Timing Table
+   ============================================================ */
+.timing-table {
+  width: max-content;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+
+.timing-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--color-surface2);
+  color: var(--color-text-dim);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 4px 4px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: right;
+  white-space: nowrap;
+  z-index: 10;
+}
+.timing-table thead th:first-child,
+.timing-table thead th:nth-child(2),
+.timing-table thead th:nth-child(4) {
+  text-align: left;
+}
+
+.timing-table tbody tr {
+  border-bottom: 1px solid var(--color-border);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.timing-table tbody tr:nth-child(even) { background: rgba(255,255,255,0.03); }
+.timing-table tbody tr:hover { background: var(--color-surface2); }
+.timing-table tbody tr.selected { background: #1a2433; }
+
+.timing-table td {
+  padding: 3px 4px;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+  vertical-align: middle;
+}
+.timing-table td.col-driver, .timing-table td.col-team { text-align: left; }
+
+.timing-table th.col-pos,
+.timing-table th.col-poschange,
+.timing-table th.col-nr,
+.timing-table th.col-rd,
+.timing-table th.col-bestl,
+.timing-table th.col-pit,
+.timing-table th.col-tlw,
+.timing-table th.col-cpos,
+.timing-table th.col-sec,
+.timing-table td.col-pos,
+.timing-table td.col-poschange,
+.timing-table td.col-nr,
+.timing-table td.col-rd,
+.timing-table td.col-bestl,
+.timing-table td.col-pit,
+.timing-table td.col-tlw,
+.timing-table td.col-cpos {
+  text-align: center;
+}
+
+.timing-table th.col-team {
+  text-align: left;
+}
+
+@media (min-width: 1920px) {
+  #table-container {
+    overflow-y: hidden;
+  }
+
+  #timing-grid {
+    grid-template-columns: minmax(0, 1fr);
+    height: 100%;
+  }
+
+  #timing-pane-right {
+    display: none;
+  }
+
+  .timing-pane {
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+}
+
+/* Column widths */
+.col-pos       { width: 26px; }
+.col-poschange { width: 26px; font-size: 10px; font-variant-numeric: tabular-nums; }
+.pos-gained    { color: #4caf50; font-weight: 600; }
+.pos-lost      { color: #e53935; font-weight: 600; }
+.pos-same      { color: var(--color-text-dim); }
+.col-nr    { width: 36px; }
+.col-driver{ width: 280px; }
+.col-logo  { width: 36px; text-align: center; }
+.col-team  { width: 270px; }
+.col-rd    { width: 32px; }
+.col-gap   { width: 68px; }
+.col-int   { width: 68px; }
+.col-sec   { width: 68px; }
+.col-last  { width: 68px; }
+.col-best  { width: 68px; }
+.col-bestl { width: 26px; }
+.col-ptime { width: 64px; }
+.col-pit   { width: 22px; }
+.col-stint { width: 56px; }
+.col-tlw   { width: 26px; }
+.col-cpos  { width: 34px; }
+
+/* Tabular (fixed-width) digits for all timing and numeric cells */
+.col-pos, .col-rd, .col-gap, .col-int, .col-sec,
+.col-last, .col-best, .col-bestl, .col-ptime,
+.col-pit, .col-stint, .col-tlw, .col-cpos {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Manufacturer logo */
+.mfr-logo {
+  width: 32px;
+  height: 22px;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto;
+}
+.mfr-logo--white {
+  filter: brightness(0) invert(1);
+}
+
+/* Class number badge */
+.nr-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 700;
+  font-size: 11px;
+  min-width: 28px;
+  text-align: center;
+}
+
+/* Driver cell: active + teammates */
+.driver-cell { display: flex; flex-direction: column; gap: 0; }
+.driver-active { font-weight: 600; white-space: nowrap; }
+.driver-active.in-pit { color: var(--color-inpit); }
+.driver-mates { color: var(--color-text); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Team cell */
+.team-cell { display: flex; flex-direction: column; min-width: 0; }
+.team-name { font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.team-name.in-pit { color: var(--color-inpit); }
+.vehicle-name { color: var(--color-text); font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Pit badge in Last column */
+.pit-badge {
+  display: inline-block;
+  background: var(--color-inpit);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 2px;
+  letter-spacing: 0.5px;
+}
+.outlap-badge {
+  display: inline-block;
+  background: #555;
+  color: #ccc;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 2px;
+  letter-spacing: 0.5px;
+}
+
+/* Time cell colour variants */
+.time-purple { color: var(--color-time-purple); font-weight: 700; }
+.time-blue   { color: var(--color-time-blue); font-weight: 600; }
+.time-green  { color: var(--color-time-green); font-weight: 600; }
+.time-yellow { color: var(--color-time-yellow); }
+
+/* ============================================================
+   Sidebar Sections
+   ============================================================ */
+.sidebar-section {
+  background: var(--color-surface2);
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+
+.sidebar-section h3 {
+  font-size: 9px;
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+  letter-spacing: 0.6px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 3px;
+  display: flex;
+  align-items: baseline;
+}
+
+.sidebar-rc-msg {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  column-gap: 6px;
+  align-items: start;
+  font-size: 10px;
+  color: #fbbf24;
+  line-height: 1.4;
+  padding: 2px 0;
+  border-bottom: 1px solid #3a2800;
+}
+
+.sidebar-rc-msg:last-child {
+  border-bottom: none;
+}
+
+.sidebar-rc-time {
+  color: #a08020;
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-rc-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sector-theo-best {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-time-purple);
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+.sector-theo-label {
+  font-weight: 400;
+  color: var(--color-text-dim);
+}
+
+.best-sector-row {
+  display: flex;
+  align-items: center;
+  padding: 2px 0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.best-sector-key    { color: var(--color-text-dim); width: 22px; flex-shrink: 0; }
+.best-sector-time   { color: var(--color-time-purple); font-weight: 600; width: 62px; flex-shrink: 0; }
+.best-sector-car    { color: var(--color-text-dim); font-size: 10px; width: 30px; flex-shrink: 0; }
+.best-sector-logo   { width: 22px; flex-shrink: 0; display: flex; align-items: center; }
+.best-sector-spacer { flex: 1; }
+.best-sector-driver { color: var(--color-text-dim); font-size: 10px; width: 72px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+
+.theoretical-best {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-time-purple);
+  text-align: center;
+  margin-top: 4px;
+}
+
+.mfr-block { margin-bottom: 8px; }
+.mfr-header {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 0 2px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 2px;
+}
+.mfr-count { font-weight: 400; color: var(--color-text-dim); }
+.mfr-toggle { cursor: pointer; user-select: none; }
+.mfr-toggle:hover { color: var(--color-text); }
+.mfr-chevron { display: inline-block; width: 12px; font-size: 10px; color: var(--color-text-dim); }
+.mfr-table { width: 100%; border-collapse: collapse; }
+.mfr-table tr:hover { background: var(--color-row-hover, rgba(255,255,255,0.04)); }
+.mfr-col-nr   { font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; width: 32px; padding: 1px 4px 1px 2px; }
+.mfr-col-pos  { font-size: 10px; color: var(--color-text-dim); font-variant-numeric: tabular-nums; width: 28px; padding: 1px 4px 1px 0; }
+.mfr-col-team { font-size: 10px; color: var(--color-text-dim); padding: 1px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 140px; }
+.manufacturer-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  font-size: 11px;
+}
+.mfr-name           { white-space: nowrap; }
+.manufacturer-best  { display: flex; align-items: center; margin-left: auto; font-size: 10px; color: var(--color-text-dim); white-space: nowrap; }
+.mfr-best-nr        { font-weight: 600; color: var(--color-text); width: 30px; text-align: left; }
+.mfr-best-team      { width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+.mfr-best-pos       { width: 22px; text-align: right; font-weight: 600; color: var(--color-text); }
+.mfr-car-row        { display: flex; align-items: center; font-size: 10px; color: var(--color-text-dim); padding: 1px 0; }
+.mfr-car-spacer     { flex: 1; }
+.manufacturer-count { color: var(--color-text-dim); font-size: 10px; }
+
+.mfr-sort-btns { float: right; display: inline-flex; gap: 2px; }
+.mfr-sort-btn {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-dim);
+  font-size: 9px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  cursor: pointer;
+  line-height: 1.4;
+}
+.mfr-sort-btn.active {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+.mfr-sort-btn:hover { border-color: var(--color-text-dim); }
+
+/* Car detail history */
+.detail-header { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+.detail-driver-best { font-size: 10px; color: var(--color-text-dim); margin-bottom: 6px; }
+
+.lap-history-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.lap-history-table th {
+  font-size: 9px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  text-align: right;
+  padding: 2px 2px;
+  border-bottom: 1px solid var(--color-border);
+}
+.lap-history-table th:first-child { text-align: left; }
+.lap-history-table td {
+  font-size: 10px;
+  text-align: right;
+  padding: 2px 2px;
+  border-bottom: 1px solid #1e1e1e;
+}
+.lap-history-table td:first-child { text-align: left; color: var(--color-text-dim); }
+
+.lap-chart-block {
+  flex: 1;
+  min-height: 0;
+  margin-top: 6px;
+  padding: 8px 10px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: #111;
+}
+
+.timing-chart-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.timing-chart-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.timing-chart-title-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.timing-chart-caption {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.timing-chart-team {
+  font-size: 10px;
+  color: var(--color-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 420px;
+}
+
+.timing-chart-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 10px;
+  color: var(--color-text-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.timing-chart-panel .lap-chart-block {
+  margin-top: 0;
+}
+
+.lap-chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.lap-chart-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.lap-chart-range {
+  font-size: 10px;
+  color: var(--color-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.lap-chart {
+  width: 100%;
+  height: 100%;
+  min-height: 180px;
+  display: block;
+}
+
+.lap-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-bottom: 6px;
+}
+
+.lap-chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--color-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.lap-chart-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.lap-chart-axis {
+  stroke: var(--color-border);
+  stroke-width: 1;
+}
+
+.lap-chart-grid {
+  stroke: #242424;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.lap-chart-phase {
+  opacity: 0.18;
+}
+
+.lap-chart-phase--fcy {
+  fill: #facc15;
+}
+
+.lap-chart-phase--sc {
+  fill: #f97316;
+}
+
+.lap-chart-line {
+  fill: none;
+  stroke: var(--color-time-blue);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.lap-chart-point {
+  fill: var(--color-time-blue);
+  opacity: 0.9;
+}
+
+.lap-chart-label {
+  fill: var(--color-text-dim);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   Connection status
+   ============================================================ */
+#status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #555;
+  flex-shrink: 0;
+}
+#status-dot.connected { background: var(--color-flag-green); }
+#status-dot.error { background: var(--color-inpit); animation: pulse 1s infinite; }
+
+@keyframes pulse {
+  0%,100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* ============================================================
+   Header Buttons
+   ============================================================ */
+#fullscreen-btn,
+#archive-btn {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-dim);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+#fullscreen-btn {
+  margin-right: 6px;
+}
+#fullscreen-btn:hover,
+#fullscreen-btn.active,
+#archive-btn:hover { border-color: var(--color-text-dim); color: var(--color-text); }
+
+/* ============================================================
+   Replay Banner
+   ============================================================ */
+#replay-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 12px;
+  background: #1a0d00;
+  border-bottom: 1px solid #7c3a00;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #fb923c;
+}
+#replay-banner.hidden { display: none; }
+#replay-banner::before { content: 'REPLAY'; font-weight: 700; letter-spacing: 1px; }
+#replay-label { color: var(--color-text); font-weight: 600; }
+#replay-banner button {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid #7c3a00;
+  color: #fb923c;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 2px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+#replay-banner button:hover { background: #7c3a00; }
+
+#status-dot.replay { background: #fb923c; }
+
+/* ============================================================
+   Archive Modal
+   ============================================================ */
+.archive-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.archive-modal.hidden { display: none; }
+
+.archive-modal-inner {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  width: 480px;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.archive-modal-header {
+  display: flex;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.archive-modal-title {
+  font-weight: 600;
+  font-size: 13px;
+  flex: 1;
+}
+.archive-modal-close {
+  background: transparent;
+  border: none;
+  color: var(--color-text-dim);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.archive-modal-close:hover { color: var(--color-text); }
+
+.archive-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 6px;
+}
+
+.archive-loading, .archive-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--color-text-dim);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.archive-row {
+  padding: 8px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  margin-bottom: 3px;
+}
+.archive-row:hover { background: var(--color-surface2); border-color: var(--color-border); }
+
+.archive-row-label {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.archive-row-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 10px;
+  color: var(--color-text-dim);
+}
+
+/* ============================================================
+   Scrollbars
+   ============================================================ */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 2px; }

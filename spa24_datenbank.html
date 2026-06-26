@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>24h Spa 2026 — Kommentator-Datenbank</title>
+<style>
+  :root{
+    --bg:#0b0c0f; --bg2:#13151a; --card:#171a21; --card2:#1d2129;
+    --input:#1f242d; --border:#272c36; --border2:#363d4a;
+    --text:#eef1f6; --muted:#9aa3b2; --dim:#69707e;
+    --red:#e2342b; --red-d:#9c1c16; --amber:#f0a23c; --amber2:#f0a23c;
+    --gold:#d8a33a; --silver:#b9c0cc; --bronze:#c07c44; --plat:#7fd0e6;
+    --pro:#e2342b; --proam:#c77dff; --goldc:#d8a33a; --silverc:#9aa3b2; --bronzec:#c07c44;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  html,body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;font-size:16px;line-height:1.5;min-height:100%}
+  body{display:flex;flex-direction:column;min-height:100dvh}
+  button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+  input{font-family:inherit}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,monospace}
+
+  /* HEADER */
+  header{position:sticky;top:0;z-index:50;background:linear-gradient(180deg,#0b0c0f 0%,#0b0c0f 70%,rgba(11,12,15,.92) 100%);border-bottom:1px solid var(--border)}
+  .top{display:flex;align-items:center;gap:10px;padding:13px 15px 9px}
+  .badge{display:flex;align-items:center;gap:7px}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--red);box-shadow:0 0 9px var(--red)}
+  .ttl{font-size:14px;font-weight:700;letter-spacing:.04em}
+  .ttl small{display:block;font-size:10px;font-weight:600;color:var(--dim);letter-spacing:.12em;margin-top:1px}
+  .count{margin-left:auto;font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums}
+
+  .searchwrap{padding:0 15px 10px}
+  .search{width:100%;background:var(--input);border:1px solid var(--border);border-radius:11px;padding:11px 13px;color:var(--text);font-size:15px;outline:none}
+  .search:focus{border-color:var(--border2)}
+  .search::placeholder{color:var(--dim)}
+
+  /* category pills */
+  .pills{display:flex;gap:7px;overflow-x:auto;padding:0 15px 9px;scrollbar-width:none}
+  .pills::-webkit-scrollbar{display:none}
+  .pill{flex:0 0 auto;font-size:12.5px;font-weight:600;padding:7px 13px;border-radius:999px;background:var(--card);border:1px solid var(--border);color:var(--muted);white-space:nowrap;display:flex;align-items:center;gap:5px}
+  .pill.on{background:var(--text);color:#0b0c0f;border-color:var(--text)}
+
+  /* class chips */
+  .chips{display:flex;gap:6px;overflow-x:auto;padding:0 15px 11px;scrollbar-width:none}
+  .chips::-webkit-scrollbar{display:none}
+  .chip{flex:0 0 auto;font-size:11.5px;font-weight:700;letter-spacing:.03em;padding:5px 11px;border-radius:7px;background:transparent;border:1px solid var(--border2);color:var(--muted);white-space:nowrap}
+  .chip.on{color:#0b0c0f}
+  .chip[data-c="ALLE"].on{background:var(--text);border-color:var(--text)}
+  .chip[data-c="PRO"].on{background:var(--pro);border-color:var(--pro);color:#fff}
+  .chip[data-c="PRO-AM"].on{background:var(--proam);border-color:var(--proam);color:#1a0b2e}
+  .chip[data-c="GOLD"].on{background:var(--goldc);border-color:var(--goldc)}
+  .chip[data-c="SILVER"].on{background:var(--silverc);border-color:var(--silverc)}
+  .chip[data-c="BRONZE"].on{background:var(--bronzec);border-color:var(--bronzec);color:#fff}
+  .actions{display:flex;gap:8px;padding:0 15px 12px}
+  .actionbtn{flex:1;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:10px 12px;font-size:13px;font-weight:700}
+  .actionbtn:active{border-color:var(--border2)}
+
+  /* LIST */
+  main{flex:1;padding:13px 15px 60px;max-width:760px;width:100%;margin:0 auto}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:10px;cursor:pointer;transition:border-color .12s}
+  .card:active{border-color:var(--border2)}
+  .crow{display:flex;align-items:flex-start;gap:11px}
+  .num{flex:0 0 auto;min-width:42px;height:42px;padding:0 6px;border-radius:9px;background:var(--card2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:17px;font-variant-numeric:tabular-nums}
+  .cmain{flex:1;min-width:0}
+  .cteam{font-weight:700;font-size:15px;line-height:1.3}
+  .ccar{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .ctag{margin-left:auto;flex:0 0 auto}
+  .clsbadge{font-size:10px;font-weight:800;letter-spacing:.04em;padding:3px 7px;border-radius:5px;color:#0b0c0f}
+  .clsbadge.PRO{background:var(--pro);color:#fff}
+  .clsbadge.PROAM{background:var(--proam);color:#1a0b2e}
+  .clsbadge.GOLD{background:var(--goldc)}
+  .clsbadge.SILVER{background:var(--silverc)}
+  .clsbadge.BRONZE{background:var(--bronzec);color:#fff}
+  .clsbadge.INFO{background:var(--border2);color:var(--text)}
+  .drow{margin-top:9px;font-size:12.5px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 10px}
+  .drow b{color:var(--text);font-weight:600}
+  .hooks{margin-top:9px;display:flex;flex-wrap:wrap;gap:5px}
+  .hook{font-size:10.5px;font-weight:600;padding:3px 8px;border-radius:6px;background:rgba(226,52,43,.12);color:#f08a84;border:1px solid rgba(226,52,43,.25)}
+  .hook.custom{background:rgba(127,208,230,.14);color:#a7e8f5;border-color:rgba(127,208,230,.3)}
+  .seclabel{font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--dim);text-transform:uppercase;margin:18px 2px 9px}
+  .empty{text-align:center;color:var(--dim);padding:50px 20px;font-size:14px}
+
+  /* DETAIL */
+  .detail{position:fixed;inset:0;z-index:100;background:var(--bg);display:none;flex-direction:column}
+  .detail.on{display:flex}
+  .dhead{position:sticky;top:0;background:var(--bg2);border-bottom:1px solid var(--border);padding:13px 15px;display:flex;align-items:center;gap:11px}
+  .back{font-size:14px;font-weight:600;color:var(--muted);display:flex;align-items:center;gap:5px;padding:5px 4px}
+  .dbody{flex:1;overflow-y:auto;padding:16px 17px 70px;max-width:760px;width:100%;margin:0 auto;-webkit-overflow-scrolling:touch}
+  .dnum{display:inline-flex;align-items:center;gap:9px;margin-bottom:6px}
+  .dnum .n{min-width:46px;height:46px;padding:0 8px;border-radius:10px;background:var(--card2);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:19px}
+  .dtitle{font-size:21px;font-weight:800;line-height:1.25;margin:8px 0 4px}
+  .dsub{font-size:14px;color:var(--muted);margin-bottom:14px}
+  .dsec{margin:16px 0}
+  .dsec h3{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--red);font-weight:800;margin-bottom:8px}
+  .dsec p{font-size:14.5px;color:#dde1e9;margin-bottom:9px}
+  .dsec p:last-child{margin-bottom:0}
+  .dlist{list-style:none}
+  .dlist li{font-size:14px;padding:8px 0;border-bottom:1px solid var(--border);display:flex;gap:10px}
+  .dlist li:last-child{border-bottom:none}
+  .dlist .k{flex:0 0 auto;min-width:84px;color:var(--muted);font-weight:600}
+  .dlist .v{flex:1;color:#dde1e9}
+  .drivers{display:flex;flex-direction:column;gap:7px;margin-top:4px}
+  .driver{display:flex;align-items:center;gap:9px;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:9px 11px}
+  .driver .di{flex:0 0 auto;width:20px;height:20px;border-radius:50%;background:var(--card2);font-size:10px;display:flex;align-items:center;justify-content:center;color:var(--dim);font-weight:700}
+  .driver .dn{flex:1;font-size:14px;font-weight:600}
+  .driver .dnote{font-size:11px;color:var(--muted)}
+  .pin{font-size:12px;color:var(--dim);background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-top:14px;line-height:1.5}
+  table.mini{width:100%;border-collapse:collapse;font-size:13px;margin-top:4px}
+  table.mini td{padding:7px 6px;border-bottom:1px solid var(--border);vertical-align:top}
+  table.mini td:first-child{color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+  table.mini tr:last-child td{border-bottom:none}
+  .tllist{display:flex;flex-direction:column;gap:2px}
+  .tlrow{display:flex;gap:10px;font-size:13.5px;padding:6px 0;border-bottom:1px solid var(--border)}
+  .tlrow:last-child{border-bottom:none}
+  .tlrow .tt{flex:0 0 auto;min-width:96px;color:var(--red);font-weight:700;font-variant-numeric:tabular-nums}
+  .tlrow.live .tt::after{content:" ●";color:var(--red)}
+  .tlrow .te{flex:1;color:#dde1e9}
+  .tlrow .te small{display:block;color:var(--dim);font-size:11px}
+  .daycard{background:var(--card);border:1px solid var(--border);border-radius:11px;padding:12px 13px;margin-bottom:11px}
+  .daycard h4{font-size:13px;font-weight:800;color:var(--amber2);margin-bottom:9px;letter-spacing:.02em}
+  .foot{text-align:center;color:var(--dim);font-size:11px;padding:24px 0 8px}
+  .customflag{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--plat);margin-top:8px}
+  .mutebtn{margin-top:14px;width:100%;background:var(--card);border:1px solid var(--border);border-radius:9px;padding:10px 12px;color:#ffb4b4;font-size:13px;font-weight:700}
+
+  /* FORM */
+  .sheet{position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.72);display:none;align-items:flex-end}
+  .sheet.on{display:flex}
+  .sheetcard{width:100%;max-width:760px;margin:0 auto;background:var(--bg2);border-top:1px solid var(--border2);border-radius:18px 18px 0 0;padding:16px 15px 24px;max-height:92dvh;overflow-y:auto}
+  .sheethead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+  .sheettitle{font-size:18px;font-weight:800}
+  .sheetclose{font-size:13px;font-weight:700;color:var(--muted);padding:6px 2px}
+  .formgrid{display:grid;gap:11px}
+  .field label{display:block;font-size:11px;letter-spacing:.08em;color:var(--dim);text-transform:uppercase;margin-bottom:6px}
+  .field input,.field select,.field textarea{width:100%;background:var(--input);border:1px solid var(--border);border-radius:10px;padding:11px 12px;color:var(--text);font-size:14px;outline:none}
+  .field textarea{min-height:86px;resize:vertical}
+  .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--border2)}
+  .sheethint{font-size:12px;color:var(--muted);line-height:1.45}
+  .saverow{display:flex;gap:8px;margin-top:14px}
+  .savebtn,.ghostbtn{flex:1;border-radius:10px;padding:11px 12px;font-size:14px;font-weight:800}
+  .savebtn{background:var(--red);color:#fff}
+  .ghostbtn{background:var(--card);border:1px solid var(--border);color:var(--text)}
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <div class="badge"><span class="dot"></span>
+      <div class="ttl">24h SPA 2026<small>CROWDSTRIKE · GTWC ENDURANCE</small></div>
+    </div>
+    <div class="count" id="count"></div>
+  </div>
+  <div class="searchwrap"><input class="search" id="q" placeholder="Suche: Team, Fahrer, Marke, Nr. …" autocomplete="off"></div>
+  <div class="pills" id="pills"></div>
+  <div class="chips" id="chips"></div>
+  <div class="actions" id="actions">
+    <button class="actionbtn" id="add-entry-btn">+ Eigener Eintrag</button>
+  </div>
+</header>
+<main id="list"></main>
+
+<div class="detail" id="detail">
+  <div class="dhead"><button class="back" id="back">‹ Zurück</button></div>
+  <div class="dbody" id="dbody"></div>
+</div>
+
+<div class="sheet" id="entry-sheet">
+  <div class="sheetcard">
+    <div class="sheethead">
+      <div class="sheettitle">Eigenen Eintrag erfassen</div>
+      <button class="sheetclose" id="entry-close">Schließen</button>
+    </div>
+    <div class="sheethint">Die Einträge werden lokal in diesem Browser gespeichert und erscheinen direkt in der Team-Datenbank.</div>
+    <div class="formgrid" style="margin-top:14px">
+      <div class="field"><label for="entry-number">Startnummer</label><input id="entry-number" maxlength="6" placeholder="z. B. 777"></div>
+      <div class="field"><label for="entry-team">Team</label><input id="entry-team" placeholder="Teamname"></div>
+      <div class="field"><label for="entry-car">Auto</label><input id="entry-car" placeholder="z. B. Ferrari 296 GT3 EVO"></div>
+      <div class="field"><label for="entry-class">Klasse</label><select id="entry-class"><option>PRO</option><option>PRO-AM</option><option>GOLD</option><option>SILVER</option><option>BRONZE</option></select></div>
+      <div class="field"><label for="entry-drivers">Fahrer</label><textarea id="entry-drivers" placeholder="Ein Fahrer pro Zeile"></textarea></div>
+      <div class="field"><label for="entry-hooks">Aufhänger / Notes</label><textarea id="entry-hooks" placeholder="Ein Punkt pro Zeile"></textarea></div>
+    </div>
+    <div class="saverow">
+      <button class="ghostbtn" id="entry-cancel">Abbrechen</button>
+      <button class="savebtn" id="entry-save">Eintrag speichern</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* =========================================================
+   24h SPA 2026 — Datenbank
+   Stand: 11.06.2026 · Quellen: offizielle Entry List,
+   GTWC-Reglement, Zeitplan Draft 5, Speedweek
+   ========================================================= */
+
+const MAN = {
+  "Mercedes-AMG GT3 EVO":"Mercedes-AMG","Porsche 911 GT3 R EVO":"Porsche",
+  "Porsche 911 GT3 R (992) EVO":"Porsche","BMW M4 GT3 EVO":"BMW",
+  "Ferrari 296 GT3 EVO":"Ferrari","Aston Martin Vantage AMR GT3 EVO":"Aston Martin",
+  "Audi R8 LMS GT3 EVO II":"Audi","McLaren 720S GT3 EVO":"McLaren",
+  "Corvette Z06 GT3 R":"Corvette","Ford Mustang GT3 EVO":"Ford",
+  "Lamborghini Temerario GT3":"Lamborghini"
+};
+
+/* TEAMS — ein Eintrag pro gemeldetem Auto (70) */
+const TEAMS = [
+ {n:"0",team:"Johor Motorsports Racing JMR",car:"Corvette Z06 GT3 R",cls:"BRONZE",d:["H.H. Prince Jefri Ibrahim","Prince Abu Bakar Ibrahim","Ben Green","Mohamad Afiq Yazid"],hooks:["Royales JMR-Projekt","Ben Green = Profi-Anker"]},
+ {n:"2",team:"Boutsen VDS",car:"Porsche 911 GT3 R EVO",cls:"PRO",d:["Morris Schuring","Dorian Boccolacci","Alessio Picariello"],hooks:["Boutsen: neues Porsche-Kapitel","Picariello 2. in Spa 2025","Belgisches Team"]},
+ {n:"3",team:"Mercedes-AMG Team Verstappen Racing",car:"Mercedes-AMG GT3 EVO",cls:"PRO",d:["Dani Juncadella","Chris Lulham","Jules Gounon"],hooks:["Gounon: 2× Spa-Sieger","Verstappen-Banner","Top-Favorit"]},
+ {n:"4",team:"Optimum Motorsport",car:"McLaren 720S GT3 EVO",cls:"GOLD",d:["Adam Smalley","Freddie Tomlinson","Harry George","Ruben del Sarte"],hooks:["McLaren Gold-Spitze"]},
+ {n:"5",team:"Optimum Motorsport",car:"McLaren 720S GT3 EVO",cls:"SILVER",d:["Mikey Porter","Guilherme Oliveira","Dante Rappange","Salman Owega"]},
+ {n:"6",team:"GetSpeed Team Bartone Bros",car:"Mercedes-AMG GT3 EVO",cls:"SILVER",d:["Aurelien Panis","Anthony Bartone","Cesar Gazeau","Karol Basz"],hooks:["Panis (Sohn von A. Panis)"]},
+ {n:"7",team:"Comtoyou Racing",car:"Aston Martin Vantage AMR GT3 EVO",cls:"PRO",d:["Mattia Drudi","Marco Sorensen","Nicki Thiim"],hooks:["Comtoyou: Spa-Sieger 2024","Saisonauftakt Paul Ricard gewonnen","Thiim/Sorensen Aston-Speerspitze"]},
+ {n:"8",team:"Car Collection Motorsport",car:"Porsche 911 GT3 R EVO",cls:"PRO-AM",d:["McKenzie Beecroft","Nicolò Rosi","Niccolò Schirò","Joel Sturm"]},
+ {n:"9",team:"Pure Rxcing",car:"Porsche 911 GT3 R EVO",cls:"SILVER",d:["Aleksei Nesov","Aliaksandr Malykhin","Max Hofer","Enzo Trulli"],hooks:["Trulli (Sohn von Jarno)"]},
+ {n:"10",team:"Boutsen VDS",car:"Porsche 911 GT3 R EVO",cls:"GOLD",d:["Gilles Magnus","Robin Knutsson","Alessandro Ghiretti","TBA"],hooks:["Magnus: belgisches Talent","Belgisches Team"]},
+ {n:"11",team:"Comtoyou Racing",car:"Aston Martin Vantage AMR GT3 EVO",cls:"BRONZE",d:["Marcelo Tomasoni","Aaron Muss","Kyle Marcelli","Felice Jelmini"]},
+ {n:"12",team:"GetSpeed Team Dubai",car:"Mercedes-AMG GT3 EVO",cls:"BRONZE",d:["Gabriel Rindone","Tom Kalender","Mikael Grenier","Jarrod Waberski"]},
+ {n:"17",team:"Mercedes-AMG Team GetSpeed",car:"Mercedes-AMG GT3 EVO",cls:"PRO",d:["Maxime Martin","Maximilian Götz","Fabian Schiller"],hooks:["Martin & Schiller: 24h-Nürburgring-Sieger 2026","Martin: Spa-Sieger 2016 + Bathurst 12h","Belgischer Lokalmatador"]},
+ {n:"20",team:"Team Motopark",car:"Mercedes-AMG GT3 EVO",cls:"SILVER",d:["Christian Mansell","Levente Revesz","Rui Andrade","Yannick Mettler"]},
+ {n:"21",team:"Comtoyou Racing",car:"Aston Martin Vantage AMR GT3 EVO",cls:"SILVER",d:["Oliver Söderström","Sébastien Baud","Kobe Pauwels","Arthur Dorison"]},
+ {n:"22",team:"Schumacher CLRT",car:"Porsche 911 GT3 R (992) EVO",cls:"PRO",d:["Frédéric Makowiecki","Ayhancan Güven","Matt Campbell"],hooks:["⚠ Makowiecki ersetzt Heinrich (→ IMSA)","Güven = amtierender DTM-Meister","Team von Côme Ledogar"]},
+ {n:"23",team:"Team RJN",car:"McLaren 720S GT3 EVO",cls:"SILVER",d:["Horatio Fitz-Simon","Maxwell Lynn","Ben Dörr","Luciano Morano"]},
+ {n:"24",team:"Steller Motorsport",car:"Corvette Z06 GT3 R",cls:"GOLD",d:["Antoine Doquin","Mikkel Pedersen","Dennis Lind","TBA"],hooks:["Eine von nur 2 Corvettes"]},
+ {n:"25",team:"Sainteloc Racing",car:"Audi R8 LMS GT3 EVO II",cls:"SILVER",d:["Ezequiel Perez Companc","Etienne Cheli","Ivan Klymenko","TBA"]},
+ {n:"28",team:"Haas RT",car:"Audi R8 LMS GT3 EVO II",cls:"PRO-AM",d:["Simon Balcaen","Mathieu Castelein","Pierre Castelein","Steven Palette"],hooks:["Belgisches Team, 3. Teilnahme in Folge","3 belgische Fahrer im Audi"]},
+ {n:"30",team:"Team WRT",car:"BMW M4 GT3 EVO",cls:"SILVER",d:["Ignacio Montenegro","Matisse Lismont","Amaury Cordeel","TBA"],hooks:["WRT: Spa-Sieger 2011 & 2014","Lismont & Cordeel = belgische Talente"]},
+ {n:"32",team:"Team WRT",car:"BMW M4 GT3 EVO",cls:"PRO",d:["Kelvin van der Linde","Jordan Pepper","Charles Weerts"],hooks:["Pepper: Titelverteidiger (jetzt im BMW)","Weerts: 2. 2021 / 3. 2024","WRT Werks-BMW"]},
+ {n:"33",team:"2Seas Motorsport",car:"Mercedes-AMG GT3 EVO",cls:"BRONZE",d:["Scott Noble","Lewis Williamson","Jason Hart","Aaron Walker"]},
+ {n:"34",team:"natural elements by Walkenhorst Motorsport",car:"Aston Martin Vantage AMR GT3 EVO",cls:"PRO",d:["Henrique Chaves","Christian Krognes","Jamie Day"]},
+ {n:"35",team:"Walkenhorst Motorsport",car:"Aston Martin Vantage AMR GT3 EVO",cls:"SILVER",d:["Gaspard Simon","Ethan Ischer","Mateo Villagomez","Maxime Robin"]},
+ {n:"42",team:"Oman Racing by Century Motorsport",car:"BMW M4 GT3 EVO",cls:"BRONZE",d:["Ahmad Al Harthy","Javier Sagrera","Calan Williams","Pedro Ebrahim"]},
+ {n:"44",team:"Greystone GT",car:"McLaren 720S GT3 EVO",cls:"SILVER",d:["Tommy Pintos","Jayden Kelly","Josh Rattican","Zac Meakin"]},
+ {n:"45",team:"Rinaldi Racing",car:"Ferrari 296 GT3 EVO",cls:"SILVER",d:["Rafael Duran","Dylan Medler","David Perel","Alessandro Balzan"]},
+ {n:"46",team:"Team WRT",car:"BMW M4 GT3 EVO",cls:"PRO",d:["Daniel Harper","Max Hesse","Valentino Rossi"],hooks:["★ Valentino Rossi","Harper/Hesse = schnelles BMW-Duo","Publikumsmagnet"]},
+ {n:"48",team:"Mercedes-AMG Team MANN-FILTER",car:"Mercedes-AMG GT3 EVO",cls:"PRO",d:["Lucas Auer","Luca Stolz","Maro Engel"],hooks:["Stolz & Engel: 24h-Nürburgring-Sieger 2026","Werks-AMG Top-Favorit"]},
+ {n:"50",team:"AF Corse",car:"Ferrari 296 GT3 EVO",cls:"PRO",d:["Lilou Wadoux","Arthur Leclerc","Sean Gelael"],hooks:["★ Arthur Leclerc","Wadoux: schnelle Werksfahrerin","AF Corse Werks-Ferrari"]},
+ {n:"51",team:"AF Corse",car:"Ferrari 296 GT3 EVO",cls:"PRO",d:["Alessio Rovera","Nicklas Nielsen","Tommaso Mosca"],hooks:["AF Corse Werks-Ferrari","Nielsen = WEC-Star"]},
+ {n:"52",team:"AF Corse",car:"Ferrari 296 GT3 EVO",cls:"SILVER",d:["Matias Zagazeta","Jeff Machiels","Gilles Stadsbader","Francesco Braschi"],hooks:["Machiels & Stadsbader = belgisch"]},
+ {n:"54",team:"Dinamic GT",car:"Porsche 911 GT3 R EVO",cls:"SILVER",d:["Tanart Sathienthirakul","Francesco Simonazzi","Angus Whiteside","Loris Cabirou"]},
+ {n:"56",team:"Ecurie Ecosse Blackthorn",car:"Aston Martin Vantage AMR GT3 EVO",cls:"BRONZE",d:["Jonathan Adam","Romain Leroux","Giacomo Petrobelli","Lorcan Hanafin"]},
+ {n:"58",team:"Garage 59",car:"McLaren 720S GT3 EVO",cls:"GOLD",d:["Thomas Fleming","Louis Prette","Benjamin Goethe"]},
+ {n:"59",team:"Garage 59",car:"McLaren 720S GT3 EVO",cls:"PRO",d:["Joseph Loake","Dean Macdonald","Marvin Kirchhöfer"],hooks:["Kirchhöfer = McLaren-Speerspitze"]},
+ {n:"60",team:"JMW Motorsport",car:"Ferrari 296 GT3 EVO",cls:"BRONZE",d:["Thomas Kiefer","Rolf Ineichen","Tim Heinemann","TBA"],hooks:["Heinemann = schneller Anker"]},
+ {n:"63",team:"TGI Team by GRT",car:"Lamborghini Temerario GT3",cls:"PRO",d:["Franck Perera","Maximilian Paul","Mirko Bortolotti"],hooks:["★ Neuer Lamborghini Temerario, 1. 24h-Einsatz","Bortolotti: Titelverteidiger","Lambo-Werksaufgebot"]},
+ {n:"64",team:"HRT Ford Racing",car:"Ford Mustang GT3 EVO",cls:"PRO",d:["Arjun Maini","Fabio Scherer","Thomas Drouet"],hooks:["Ford mit verbessertem Mustang"]},
+ {n:"65",team:"HRT Ford Racing",car:"Ford Mustang GT3 EVO",cls:"SILVER",d:["Finn Wiebelhaus","Maxime Oosten","Eduardo Coseteng","Max Reis"],hooks:["Eine von nur 2 Fords"]},
+ {n:"66",team:"Tresor Attempto Racing",car:"Audi R8 LMS GT3 EVO II",cls:"SILVER",d:["Rocco Mazzola","Sebastian Øgaard","Ariel Levi","TBA"],hooks:["Monza-Sieger 2026 (Endurance)"]},
+ {n:"70",team:"AF Corse",car:"Ferrari 296 GT3 EVO",cls:"PRO-AM",d:["Custodio Toledo","Miguel Molina","Matthieu Vaxiviere","Peter Dempsey"],hooks:["Molina & Vaxiviere = WEC-Profis"]},
+ {n:"71",team:"Selected Car Racing",car:"Ferrari 296 GT3 EVO",cls:"GOLD",d:["Frederik Schandorff","Malte Ebdrup","Simon Birch","Conrad Laursen"]},
+ {n:"74",team:"Kessel Racing",car:"Ferrari 296 GT3 EVO",cls:"BRONZE",d:["Dustin Blattner","Mathys Jaubert","Dennis Marschall","Ben Tuck"]},
+ {n:"79",team:"Tsunami RT",car:"Porsche 911 GT3 R (992) EVO",cls:"PRO-AM",d:["Johannes Zelger","Fabio Babini","Daniel Gaunt","Nico Menzel"]},
+ {n:"80",team:"Lionspeed GP",car:"Porsche 911 GT3 R EVO",cls:"PRO",d:["Bastian Buus","Thomas Preining","Ricardo Feller"],hooks:["Brands-Hatch-Sieger 2026 (Sprint R2)","Preining = Porsche-Werksass"]},
+ {n:"81",team:"Era Motorsport",car:"Porsche 911 GT3 R (992) EVO",cls:"BRONZE",d:["Jake Hill","Kyle Tilley"],hooks:["⚠ ZURÜCKGEZOGEN (24.06.) — NICHT am Start","Feld dadurch auf 69 Autos"]},
+ {n:"84",team:"Eastalent Racing",car:"Audi R8 LMS GT3 EVO II",cls:"PRO",d:["Christopher Haase","Simon Reicher","Markus Winkelhock"],hooks:["Haase & Winkelhock = Audi-Veteranen"]},
+ {n:"86",team:"High Class Racing",car:"Porsche 911 GT3 R (992) EVO",cls:"PRO-AM",d:["Kerong Li","Anders Fjordbach","Bo Yuan","Hongli Ye"]},
+ {n:"87",team:"Winward Racing",car:"Mercedes-AMG GT3 EVO",cls:"BRONZE",d:["Marvin Dienst","Gabriele Piana","Rinat Salikhov","Daan Arrow"]},
+ {n:"88",team:"Tresor Attempto Racing",car:"Audi R8 LMS GT3 EVO II",cls:"BRONZE",d:["Carrie Schreiner","Daniele Di Amato","TBA","TBA"],hooks:["Schreiner = bekanntes Gesicht"]},
+ {n:"89",team:"Lionspeed GP",car:"Porsche 911 GT3 R EVO",cls:"BRONZE",d:["Alex Fontana","Bashar Mardini","Patrick Kolb","Axcil Jefferies"]},
+ {n:"91",team:"Herberth Motorsport",car:"Porsche 911 GT3 R EVO",cls:"BRONZE",d:["Ralf Bohn","Huub van Eijndhoven","Alfred Renauer","Mathieu Jaminet"],hooks:["Jaminet = Porsche-Werksass als Anker"]},
+ {n:"93",team:"Ziggo Sport Tempesta Racing",car:"Porsche 911 GT3 R EVO",cls:"BRONZE",d:["Jonathan Hui","Christopher Froggatt","Eddie Cheever","TBA"],hooks:["Cheever (Name mit Historie)"]},
+ {n:"96",team:"Rutronik Racing",car:"Lamborghini Temerario GT3",cls:"PRO",d:["Luca Engstler","Marco Mapelli","Patric Niederhauser"],hooks:["Engstler: Titelverteidiger (jetzt im Lambo)","Neuer Temerario, 1. 24h-Einsatz"]},
+ {n:"97",team:"Rutronik Racing",car:"Porsche 911 GT3 R EVO",cls:"BRONZE",d:["Michelle Gatting","Antares Au","Martin Rump","Sven Müller"],hooks:["Gatting = Iron-Dames-Bekannte","Müller = Porsche-Anker"]},
+ {n:"98",team:"Rowe Racing",car:"BMW M4 GT3 EVO",cls:"PRO",d:["Augusto Farfus","Jake Dennis","Raffaele Marciello"],hooks:["★ Marciello","Dennis = Formel-E-Champ","Rowe Werks-BMW Top-Favorit"]},
+ {n:"99",team:"Tresor Attempto Racing",car:"Audi R8 LMS GT3 EVO II",cls:"GOLD",d:["Dylan Pereira","Andrea Frassineti","Alex Aka","TBA"]},
+ {n:"111",team:"CSA Racing",car:"McLaren 720S GT3 EVO",cls:"GOLD",d:["James Kell","Arthur Rougier","Simon Gachet","Jim Pla"]},
+ {n:"123",team:"Muehlner Motorsport",car:"Porsche 911 GT3 R (992) EVO",cls:"BRONZE",d:["Vanina Ickx","Tobias Müller","Paul Meijer","TBA"],hooks:["Belgisches Team, erstmals seit 2011 zurück","Vanina Ickx (Tochter von Jacky Ickx)"]},
+ {n:"177",team:"Grupo Prom Racing Team",car:"Mercedes-AMG GT3 EVO",cls:"PRO-AM",d:["Alfredo Hernandez","Stephane Tribaudini","Colin Caresani","Adam Christodoulou"]},
+ {n:"222",team:"2Seas Motorsport",car:"Mercedes-AMG GT3 EVO",cls:"BRONZE",d:["Reece Barr","Charles Dawson","Kiern Jewiss","Garnet Patterson"]},
+ {n:"555",team:"CSA Racing",car:"McLaren 720S GT3 EVO",cls:"SILVER",d:["Baptiste Moulin","Romain Andriolo","Lorens Lecertua","Sai Sanjay"],hooks:["Moulin & Lecertua = belgisch"]},
+ {n:"700",team:"Comtoyou Racing",car:"Aston Martin Vantage AMR GT3 EVO",cls:"PRO-AM",d:["Nicolas Baert","Xavier Knauf","Grégory Servais","Sarah Bovy"],hooks:["★ Rein belgisches Quartett","Sarah Bovy = Publikumsliebling","Heimspiel-Story"]},
+ {n:"914",team:"Razoon – more than racing",car:"Porsche 911 GT3 R EVO",cls:"BRONZE",d:["Kenzie Beecroft","Ed McDermott","Bryce Fullwood","Carl Bennett"],hooks:["★ Spa-Debüt (Team aus Eggersdorf b. Graz)","Fullwood = Ex-Supercars-Pilot","Bennett: Thai-Lizenz, WEC/IMSA-Erfahrung","⚠ Team nennt Pro-Am (Entry List: Bronze) — prüfen"]},
+ {n:"991",team:"Paradine Competition",car:"BMW M4 GT3 EVO",cls:"BRONZE",d:["James Kellett","Darren Leung","David Pittard","Leyton Fourie"],hooks:["Pittard: 24h-Nürburgring-Sieger 2023, Ex-Aston-Werksfahrer","Fourie: ADAC-GT-Masters-Halbzeitmeister 2026","Saison: P3 Paul Ricard, P5 Monza (Bronze)"]},
+ {n:"992",team:"Paradine Competition",car:"BMW M4 GT3 EVO",cls:"GOLD",d:["Christian Hahn","Josh Rowledge","Jop Rappange","Ian Aguilera"],hooks:["Aguilera: 19, gerade Le Mans LMP2 (P5), Escuderia Telmex","Top-10 in Monza","⚠ Team nennt Silver Cup (Entry List: Gold) — prüfen"]},
+ {n:"998",team:"Rowe Racing",car:"BMW M4 GT3 EVO",cls:"GOLD",d:["Ugo de Wilde","Tim Tramnitz","Jens Klingmann"],hooks:["de Wilde = belgisches Talent"]},
+ {n:"999",team:"GetSpeed Team PCX",car:"Mercedes-AMG GT3 EVO",cls:"PRO-AM",d:["Jordan Boisson","Patrick Charlaix","Benjamin Paque","Marvin Klein"],hooks:["Paque = belgisch"]}
+];
+
+/* INFO-Einträge: Reglement, Zeitplan, Ergebnisse, Sidefacts, Themen */
+const INFO = [
+ /* ===== AKTUELLE THEMEN ===== */
+ {cat:"themen",title:"Makowiecki ersetzt Heinrich (#22)",sub:"Fahrerwechsel · Schumacher CLRT Porsche",html:`
+   <div class="dsec"><p>Kurzfristiger Fahrerwechsel im <b>Schumacher CLRT Porsche #22</b>: <b>Frédéric Makowiecki</b> ersetzt <b>Laurin Heinrich</b>, der stattdessen bei den 6h Watkins Glen der IMSA startet (dort aktuell WM-Zweiter und bestplatzierter Porsche-Pilot).</p>
+   <p>Makowiecki, ehemaliger Porsche-Werksfahrer, teilt sich das Auto mit DTM-Meister <b>Ayhancan Güven</b> und <b>Matt Campbell</b>. 24h Spa und 6h Watkins Glen laufen parallel am letzten Juni-Wochenende.</p>
+   <p class="pin">O-Ton-Aufhänger: Routinier ersetzt jungen Werksfahrer — Makowiecki kennt Spa wie seine Westentasche.</p></div>`},
+ {cat:"themen",title:"Titel-Trio 2025 auf drei Autos verteilt",sub:"Bortolotti / Pepper / Engstler",html:`
+   <div class="dsec"><p>Das siegreiche Trio von 2025 kehrt komplett zurück — aber in <b>drei verschiedenen Autos</b>:</p>
+   <ul class="dlist">
+   <li><span class="k">#63 Lambo</span><span class="v">Mirko Bortolotti (TGI by GRT)</span></li>
+   <li><span class="k">#32 BMW</span><span class="v">Jordan Pepper (Team WRT)</span></li>
+   <li><span class="k">#96 Lambo</span><span class="v">Luca Engstler (Rutronik)</span></li>
+   </ul>
+   <p class="pin">Schöne Erzähllinie: Die drei Sieger jagen sich diesmal gegenseitig.</p></div>`},
+ {cat:"themen",title:"Lamborghini Temerario — 24h-Debüt",sub:"Titelverteidiger mit neuem Auto",html:`
+   <div class="dsec"><p>Die größte Neuigkeit der Saison: Titelverteidiger <b>Lamborghini</b> bringt den neuen <b>Temerario GT3</b> erstmals bei einem 24-Stunden-Rennen an den Start (#63 & #96). Auch <b>Ferrari, Ford und Porsche</b> schicken verbesserte Fahrzeuge ins Rennen.</p>
+   <p class="pin">Zuverlässigkeit über 24h ist beim Neuwagen immer die Schlüsselfrage.</p></div>`},
+ {cat:"themen",title:"Hitzewelle in Spa — Strategiethema",sub:"Wetterwarnung des Veranstalters",html:`
+   <div class="dsec"><p>Für die Rennwoche sind <b>außergewöhnlich hohe Temperaturen</b> vorhergesagt. Der Veranstalter hat Schutzmaßnahmen ergriffen: kostenlose Trinkwasserstellen rund um die Strecke, schattige Waldbereiche, zusätzliche Festzelte an <b>Les Combes</b> und <b>Double Gauche</b>.</p>
+   <p>Sportlich heißt das: höhere Reifen- und Bremsentemperaturen, mehr Degradation, Cockpit-Hitze als Faktor über 24 Stunden, mögliche Auswirkungen auf Stintlängen und Fahrerbelastung.</p>
+   <p class="pin">On-Air-Aufhänger: „Hitzeschlacht in den Ardennen" — Material und Mensch am Limit. Kühlung, Trinksysteme und Nachtphase (Abkühlung) werden zur Story.</p></div>`},
+ {cat:"themen",title:"Era Motorsport zurückgezogen — Feld auf 69",sub:"#81 Porsche raus",html:`
+   <div class="dsec"><p>Der <b>#81 Era Motorsport Porsche</b> (Bronze Cup) wurde kurz vor dem Rennen <b>zurückgezogen</b>. Das Feld schrumpft damit von 70 auf <b>69 Fahrzeuge</b> — weiterhin das weltgrößte GT3-Rennen.</p>
+   <p>Bestätigt waren nur Kyle Tilley und Jake Hill; das Chassis stammte von Lionspeed GP. Im Prologue war der Wagen nur sporadisch auf der Strecke.</p>
+   <p class="pin">Kurz erwähnen, falls die #81 im Material/auf Listen noch auftaucht — sie startet nicht.</p></div>`},
+ {cat:"themen",title:"Monza-Sensation: Audi siegt aus P29",sub:"Tresor Attempto #66 · größter Schock der Serie",html:`
+   <div class="dsec"><p>Beim letzten Endurance-Lauf in Monza gewann der <b>#66 Tresor Attempto Audi</b> (Mazzola/Øgaard/Levi) — und das von <b>Startplatz 29</b>. Das ist der Rekord für den am weitesten hinten gestarteten Sieger (jetzt 3×, zweimal in Monza) und der <b>erste Gesamtsieg eines Silver-Cup-Autos</b> in der Endurance-Historie.</p>
+   <p>Das Rennen begann mit einem Massencrash in Kurve 1 und endete nach mehreren Full-Course-Yellow-Phasen mit dem Coup. Tresor Attempto fährt in Spa #66 (Silver), #88 und #99.</p>
+   <p class="pin">On-Air-Gold: „In Monza ist alles möglich" — und Audi ist wieder ein Sieger.</p></div>`},
+ {cat:"themen",title:"Pech-Geschichten aus Monza",sub:"Winward #87 · RJN #23 · relevant für Spa",html:`
+   <div class="dsec"><p><b>#87 Winward Mercedes</b> (Salikhov/Piana/Dienst) war das Pechauto: lange in den Top 6, Dienst nur Zentimeter vom Sieg gegen den Audi — dann vom #9 Pure Rxcing Porsche abgeräumt (der selbst vom #32 WRT-BMW getroffen worden war). Sicher geglaubte P2 + Bronze-Sieg = nichts. Beide Autos sind in Spa dabei.</p>
+   <p><b>#23 RJN McLaren</b> (Schlussfahrer Ben Dörr) hatte die Siegpace, stoppte unter FCY eine Runde zu früh und verlor den Sieg. Auch in Spa am Start (Silver).</p>
+   <p class="pin">Wiedergutmachungs-Erzählungen für Spa: Winward und RJN haben offene Rechnungen.</p></div>`},
+ {cat:"side",title:"Boutsen VDS: Fluch & Erlösung",sub:"#10 vs. #2 — Story für Spa",html:`
+   <div class="dsec"><p>Der <b>#10 Boutsen VDS Porsche</b> blieb in Monza erneut ohne gefahrene Runde — die <b>vierte Nullnummer in Folge</b>, jedes Mal unverschuldet. Das Schwester-Auto <b>#2</b> (mit Picariello) hat dagegen in Sprint + Endurance <b>jede einzelne Runde</b> beendet (337 insgesamt).</p>
+   <p class="pin">Ein Klassensieg in Spa wäre für die #2 die süße Erlösung — schöne Erzähllinie über zwei baugleiche Autos mit gegensätzlichem Saisonverlauf.</p></div>`},
+ {cat:"side",title:"Monza: schwarzer Tag für Pro & Gold",sub:"BoP-/Klassen-Kontext",html:`
+   <div class="dsec"><p>In Monza standen so wenige Pro-Autos vorn wie nie: nur <b>1 Pro auf dem Podium</b>, 4 in den Top 10, und nur <b>8 von 17</b> Pro-Startern kamen ins Ziel. Auch der Gold Cup hatte einen Tag zum Vergessen (Sieger-Ferrari nur 14. gesamt).</p>
+   <p>Dagegen: <b>alle 16 Bronze-Autos</b> klassiert, 13 von 16 Silver. Der #74 Kessel Ferrari erbte spät den Bronze-Sieg.</p>
+   <p class="pin">Hintergrund-Aufhänger: Werks-Pros sind in der Langstrecke nicht automatisch vorn — Strategie, BoP und Zuverlässigkeit zählen ebenso.</p></div>`},
+ {cat:"side",title:"Neu 2026: „GT World Sneakers“ für die schnellste Runde",sub:"Kleiner On-Air-Sidefact",html:`
+   <div class="dsec"><p>Neuer Bonus 2026: Wer in einem Rennen die schnellste Runde fährt, bekommt ein Paar individualisierte <b>GT-World-Sneaker</b>. Bisherige Gewinner: Nicki Thiim, Maro Engel, Morris Schuring und Dennis Marschall (Monza, 1:46.396).</p>
+   <p class="pin">Lockerer Faktencheck zwischendurch — kommt beim Publikum gut an.</p></div>`},
+ {cat:"side",title:"HRT Ford: erste Mustang-Pole",sub:"Monza-Quali",html:`
+   <div class="dsec"><p>In Monza holte der <b>Ford Mustang GT3</b> mit HRT Ford Racing seine <b>erste Pole</b> in der Serie. Ford bringt für Spa ein verbessertes Paket — eines von nur zwei Fords im Feld (#64 Pro, #65 Silver).</p>
+   <p class="pin">Underdog-Story: Ford als kleiner, aber zunehmend ernstzunehmender Hersteller.</p></div>`},
+
+ /* ===== REGLEMENT ===== */
+ {cat:"reg",title:"Fahrer-Kategorien & Klassen-Zusammensetzung",sub:"Platinum · Gold · Silber · Bronze",html:`
+   <div class="dsec"><h3>Die vier FIA-Fahrerstufen</h3>
+   <ul class="dlist">
+   <li><span class="k" style="color:var(--plat)">Platinum</span><span class="v">Top-Profis: Werksfahrer, Ex-F1/WEC-Asse. Die schnellste Stufe.</span></li>
+   <li><span class="k" style="color:var(--gold)">Gold</span><span class="v">Sehr starke Profis, oft erfahrene GT-Piloten.</span></li>
+   <li><span class="k" style="color:var(--silver)">Silber</span><span class="v">Schnelle (oft junge) Fahrer ohne Top-Profi-Status.</span></li>
+   <li><span class="k" style="color:var(--bronze)">Bronze</span><span class="v">Gentleman-/Amateurfahrer. Pflicht in Bronze Cup & Pro-Am.</span></li>
+   </ul></div>
+   <div class="dsec"><h3>Erlaubte Aufstellung je Klasse</h3>
+   <table class="mini">
+   <tr><td><b style="color:var(--pro)">PRO</b></td><td>Beliebige Kategorisierung (faktisch Platinum/Gold). Kein Bronze. <b>Keine 2-Fahrer-Paare erlaubt.</b></td></tr>
+   <tr><td><b style="color:var(--goldc)">GOLD CUP</b></td><td>Gold + Gold + Silber</td></tr>
+   <tr><td><b style="color:var(--silverc)">SILVER CUP</b></td><td>Silber + Silber + Silber</td></tr>
+   <tr><td><b style="color:var(--bronzec)">BRONZE CUP</b></td><td>Platinum + Silber + Bronze (mind. 1 echter Bronze, kein Ex-Profi)</td></tr>
+   <tr><td><b style="color:var(--proam)">PRO-AM</b></td><td>Amateur-Stufe mit Profi-Verstärkung (Bronze + Pro-Mix)</td></tr>
+   </table>
+   <p class="pin">Spa-Besonderheit: erlaubt sind <b>3 ODER 4 Fahrer</b> pro Auto (Endurance sonst meist 3). Die meisten Teams setzen auf 4.</p></div>`},
+ {cat:"reg",title:"Punktesystem — Spa zählt dreifach",sub:"100 Punkte für den Sieg",html:`
+   <div class="dsec"><h3>Punkte 24h Spa (pro Rennen)</h3>
+   <table class="mini">
+   <tr><td>1.</td><td>100</td><td>4.</td><td>48</td><td>7.</td><td>24</td></tr>
+   <tr><td>2.</td><td>72</td><td>5.</td><td>40</td><td>8.</td><td>16</td></tr>
+   <tr><td>3.</td><td>60</td><td>6.</td><td>32</td><td>9.</td><td>8</td></tr>
+   <tr><td></td><td></td><td></td><td></td><td>10.</td><td>4</td></tr>
+   </table>
+   <p>Zum Vergleich: Ein normales Endurance-Rennen (3h) bringt dem Sieger 50 Punkte. <b>Spa ist also doppelt so viel wert</b> — der Endurance-Titel entscheidet sich oft hier.</p>
+   <p class="pin">Die Zwischenwertungen nach 6h und 12h bringen <b>keine WM-Punkte</b>, aber eigene Trophäen.</p></div>`},
+ {cat:"reg",title:"Coupe du Roi (King's Cup)",sub:"Spa-Sonderwertung",html:`
+   <div class="dsec"><p>Traditionelle Spa-Sonderwertung: Die <b>Coupe du Roi</b> (King's Cup) prämiert das beste Gesamtergebnis je Hersteller/Team über die kombinierten Resultate — eine reine Spa-Ehrung mit langer Historie.</p>
+   <p class="pin">Schöner Sidefact fürs belgische Publikum (Bezug zum belgischen Königshaus).</p></div>`},
+ {cat:"reg",title:"Pflicht-Stints, Fahrzeiten & Boxenstopps",sub:"Wie ein 24h-Rennen funktioniert",html:`
+   <div class="dsec"><h3>Maximale Stint-Zeit (MDS)</h3>
+   <p>Pro Event gibt es eine maximale Stintzeit (MDS) plus eine verlängerte Stintzeit (EDS), die greift, wenn während des Stints Safety Car oder Full Course Yellow lief. Der exakte Wert kommt per Stewards-Bulletin.</p></div>
+   <div class="dsec"><h3>Fahrerwechsel-Regeln</h3>
+   <ul class="dlist">
+   <li><span class="k">Bronze Cup</span><span class="v">Bei Plat/Bronze- oder Gold/Bronze-Duos: Pro-Fahrer max. MDS − 5 Min. pro Stint.</span></li>
+   <li><span class="k">Silber/Bronze</span><span class="v">Bronze muss eine Mindest-Stintzeit (MDS − 5 Min.) fahren.</span></li>
+   <li><span class="k">Wechsel</span><span class="v">Reihenfolge nach Admin-Checks fix; Änderung nur mit Steward-OK (Force Majeure).</span></li>
+   </ul>
+   <p class="pin">Für On-Air: Wenn ein Bronze ungewöhnlich kurz/lang fährt, lohnt der Blick auf die Stint-Regel.</p></div>`},
+ {cat:"reg",title:"Neues Qualifying & Superpole 2026",sub:"3-Gruppen-Quali + K.o.-Superpole",html:`
+   <div class="dsec"><h3>Qualifying (Do, abends)</h3>
+   <p>Neu für 2026 — gegen den Verkehr: <b>drei Gruppen à 10 Minuten</b>, in dieser Reihenfolge:</p>
+   <ul class="dlist">
+   <li><span class="k">Gruppe 1</span><span class="v">Bronze- & Pro-Am-Fahrer</span></li>
+   <li><span class="k">Gruppe 2</span><span class="v">Silber- & Gold-Fahrer</span></li>
+   <li><span class="k">Gruppe 3</span><span class="v">Pro-Fahrer</span></li>
+   </ul>
+   <p>Die <b>Durchschnittszeit der Fahrer je Auto</b> bestimmt die Startaufstellung.</p></div>
+   <div class="dsec"><h3>Superpole (Fr, ~15:05)</h3>
+   <p>K.o.-Format mit den 32 schnellsten Autos:</p>
+   <ul class="dlist">
+   <li><span class="k">Runde 1</span><span class="v">10 Min. → die langsamsten 16 scheiden aus</span></li>
+   <li><span class="k">Runde 2</span><span class="v">7 Min. mit den verbliebenen 16 → Top 8 weiter</span></li>
+   <li><span class="k">Runde 3</span><span class="v">7 Min. mit den Top 8 → die besten 4 weiter</span></li>
+   <li><span class="k">Finale</span><span class="v">eine einzige fliegende Runde um die Pole</span></li>
+   </ul>
+   <p class="pin">Spannender als das alte Format — vier Autos in einer Runde um die Pole.</p></div>`},
+
+ /* ===== ZEITPLAN ===== */
+ {cat:"zeit",title:"Zeitplan 24h Spa 2026",sub:"Finale Broadcast-Version · 25.–28. Juni (lokal)",html:`
+   <div class="pin" style="margin:0 0 12px;border-color:var(--red);color:var(--text)">🎙 <b>Deine Slots:</b> Do FP2 (16:10) · Fr Warm Up (19:20, mit Luis). Plus die LIVE-Sessions Wolfgang/Sebastian.</div>
+   <div class="daycard"><h4>DO 25. JUNI</h4><div class="tllist">
+     <div class="tlrow"><span class="tt">10:10–11:40</span><span class="te">GT3 Free Practice 1</span></div>
+     <div class="tlrow"><span class="tt">14:00–14:45</span><span class="te">School Day — Autogrammstunde im Endurance-Paddock</span></div>
+     <div class="tlrow live"><span class="tt">16:10–17:10</span><span class="te">GT3 Free Practice 2 <small>LIVE · Com: Wolfgang/Sebastian + JAN</small></span></div>
+     <div class="tlrow live"><span class="tt">19:45–21:50</span><span class="te">GT3 QUALIFYING (3-Gruppen-Format) <small>LIVE · On Air 19:30 · Com: Wolfgang/Sebastian</small></span></div>
+     <div class="tlrow"><span class="tt">22:10–23:40</span><span class="te">GT3 Night Practice</span></div>
+     <div class="tlrow"><span class="tt">23:35–00:20</span><span class="te">Pit Walk by Night</span></div></div></div>
+   <div class="daycard"><h4>FR 26. JUNI</h4><div class="tllist">
+     <div class="tlrow"><span class="tt">10:20–11:20</span><span class="te">GT4 Qualifying 1 & 2 <small>Com: Wolfgang/Sebastian</small></span></div>
+     <div class="tlrow"><span class="tt">12:00</span><span class="te">Pressekonferenz Stéphane Ratel <small>Raum 132</small></span></div>
+     <div class="tlrow live"><span class="tt">15:05–15:55</span><span class="te">GT3 SUPERPOLE <small>LIVE · On Air 15:00 · Com: Wolfgang/Sebastian</small></span></div>
+     <div class="tlrow"><span class="tt">18:10–19:10</span><span class="te">Pit Walk & Autogrammstunde · VIP Laps</span></div>
+     <div class="tlrow live"><span class="tt">19:20–19:50</span><span class="te">GT3 WARM UP <small>LIVE · On Air 19:15 · Com: JAN/Luis</small></span></div>
+     <div class="tlrow live"><span class="tt">21:35–22:35</span><span class="te">GT4 Race 1 <small>LIVE · Com: Wolfgang/Sebastian</small></span></div>
+     <div class="tlrow"><span class="tt">22:45–00:00</span><span class="te">Pit Walk & Track Walk by Night</span></div></div></div>
+   <div class="daycard"><h4>SA 27. JUNI — START</h4><div class="tllist">
+     <div class="tlrow live"><span class="tt">10:40–11:40</span><span class="te">GT4 Race 2 <small>LIVE · Com: Sebastian</small></span></div>
+     <div class="tlrow"><span class="tt">14:30–16:25</span><span class="te">Startzeremonie</span></div>
+     <div class="tlrow live"><span class="tt">16:30</span><span class="te">RENNSTART 24h <small>LIVE · On Air ab 15:30 · durch die Nacht</small></span></div>
+     <div class="tlrow"><span class="tt">18:00</span><span class="te">DJ-Set / Konzert in der Fan Zone</span></div>
+     <div class="tlrow"><span class="tt">22:30</span><span class="te">Feuerwerk (wetterabhängig)</span></div></div></div>
+   <div class="daycard"><h4>SO 28. JUNI — ZIEL</h4><div class="tllist">
+     <div class="tlrow live"><span class="tt">16:30</span><span class="te">ZIELFLAGGE <small>LIVE · On Air bis 17:30 (Podium Fan Zone)</small></span></div></div></div>
+   <p class="pin">Zwischenwertungen (keine Punkte, eigene Trophäen): 6h ≈ Sa 22:30 · 12h ≈ So 04:30. Sonnenaufgang 05:27 · -untergang 21:54.<br>Bereits gelaufen: Di Test/Bronze Test · Mi Parade (Strecke↔Stadt Spa).</p>`},
+
+ /* ===== ERGEBNISSE ===== */
+ {cat:"erg",title:"Meisterschaftsstand — Fahrer (Overall)",sub:"GTWC Europe gesamt · nach 3 von 10 Runden",html:`
+   <div class="dsec"><p>Kombinierte Gesamtwertung (Endurance + Sprint) nach Paul Ricard, Brands Hatch und Monza:</p>
+   <table class="mini">
+   <tr><td>1.</td><td><b>Lucas Auer / Maro Engel</b></td><td>39</td></tr>
+   <tr><td>2.</td><td>Nicki Thiim</td><td>34</td></tr>
+   <tr><td>3.</td><td>Marco Sorensen / Mattia Drudi</td><td>33</td></tr>
+   <tr><td>4.</td><td>Kelvin van der Linde / Charles Weerts</td><td>29</td></tr>
+   <tr><td>5.</td><td>Jordan Pepper</td><td>25,5</td></tr>
+   <tr><td>6.</td><td>Luca Stolz</td><td>25</td></tr>
+   <tr><td>7.</td><td>Thomas Fleming / Louis Prette</td><td>21</td></tr>
+   <tr><td>8.</td><td>Benjamin Goethe</td><td>19</td></tr>
+   <tr><td>9.</td><td>Ricardo Feller / Bastian Buus</td><td>18,5</td></tr>
+   <tr><td>10.</td><td>Marvin Kirchhöfer / Dean Macdonald</td><td>18</td></tr>
+   </table>
+   <p class="pin">Spa bringt 100 Punkte für den Sieg — die Wertung kann hier komplett umgekrempelt werden. Alle genannten Fahrer sind in Spa am Start. Teamwertung kann ich auf Zuruf ergänzen.</p></div>`},
+ {cat:"erg",title:"Saison 2026 — Ergebnisse & Podien",sub:"GTWC Europe (Endurance & Sprint)",html:`
+   <div class="dsec"><h3>Endurance Cup</h3>
+   <ul class="dlist">
+   <li><span class="k">Paul Ricard</span><span class="v"><b>#7 Comtoyou</b> Aston (Thiim/Drudi/Sorensen) — Sieg · 176 Rd.</span></li>
+   <li><span class="k">Monza</span><span class="v"><b>#66 Tresor Attempto</b> Audi — Sieg aus P29! (Sensation)</span></li>
+   <li><span class="k">Spa</span><span class="v">Runde 4 — kommt</span></li>
+   </ul></div>
+   <div class="dsec"><h3>Sprint Cup</h3>
+   <ul class="dlist">
+   <li><span class="k">Brands R1</span><span class="v"><b>#50 AF Corse</b> Ferrari</span></li>
+   <li><span class="k">Brands R2</span><span class="v"><b>#80 Lionspeed GP</b> Porsche</span></li>
+   </ul></div>
+   <p class="pin">Marken-Duell 2026: Mercedes-AMG und Porsche liegen eng beieinander, während die Saison Fahrt aufnimmt.</p></div>`},
+ {cat:"erg",title:"Spa-Historie — die letzten Sieger",sub:"Kontext für On-Air",html:`
+   <div class="dsec"><ul class="dlist">
+   <li><span class="k">2025</span><span class="v">Bortolotti / Pepper / Engstler (Lamborghini)</span></li>
+   <li><span class="k">2024</span><span class="v">Comtoyou Racing — Jubiläumsausgabe</span></li>
+   </ul>
+   <p class="pin">15 ehemalige Sieger stehen 2026 auf der Starterliste. Belgische Sieger-Teams am Start: Comtoyou (2024), Team WRT (2011, 2014).</p></div>`},
+
+ /* ===== SIDEFACTS ===== */
+ {cat:"side",title:"Das Feld in Zahlen",sub:"69 Autos · 250+ Fahrer",html:`
+   <div class="dsec"><h3>Klassen (Stand Nennung)</h3>
+   <ul class="dlist">
+   <li><span class="k">Pro</span><span class="v">18 Autos</span></li>
+   <li><span class="k">Gold Cup</span><span class="v">9 Autos</span></li>
+   <li><span class="k">Silver Cup</span><span class="v">16 Autos</span></li>
+   <li><span class="k">Bronze Cup</span><span class="v">18 Autos (nach Era-Rückzug)</span></li>
+   <li><span class="k">Pro-Am</span><span class="v">8 Autos</span></li>
+   </ul>
+   <p class="pin">Ursprünglich 70 gemeldet, nach Rückzug des #81 Era Porsche jetzt <b>69 Starter</b>.</p></div>
+   <div class="dsec"><h3>Hersteller (10)</h3>
+   <ul class="dlist">
+   <li><span class="k">Porsche</span><span class="v">stärkste Marke</span></li>
+   <li><span class="k">Mercedes-AMG</span><span class="v">11</span></li>
+   <li><span class="k">BMW / Ferrari / McLaren</span><span class="v">je 8</span></li>
+   <li><span class="k">Aston Martin</span><span class="v">7</span></li>
+   <li><span class="k">Audi</span><span class="v">6</span></li>
+   <li><span class="k">Corvette / Ford / Lambo</span><span class="v">je 2</span></li>
+   </ul>
+   <p class="pin">250+ Fahrer aus 43 Nationen, 5 Kontinente. 78. Auflage. Über 100.000 Zuschauer erwartet. Ab Quali kostenfreier SRO-Livestream auf YouTube (u.a. Deutsch & Englisch).</p></div>`}, {cat:"side",title:"Belgische Geschichten (Heimspiel)",sub:"21 belgische Fahrer",html:`
+   <div class="dsec"><p><b>Sarah Bovy</b> führt bei Comtoyou (#700) ein rein belgisches Quartett an — Publikumsliebling beim Heimrennen.</p>
+   <p>Belgische Teams: <b>Comtoyou</b>, <b>Team WRT</b>, <b>Boutsen VDS</b> (neu mit Porsche), <b>Haas RT</b> (3. Mal in Folge, 3 belgische Fahrer), <b>Mühlner Motorsport</b> (erstmals seit 2011 zurück, mit Vanina Ickx).</p>
+   <p>Belgische Stars: Maxime Martin (Sieger 2016), Alessio Picariello (2. 2025), Charles Weerts (2. 2021/3. 2024). Junge Talente: Magnus, de Wilde, Lismont, Cordeel, Stadsbader, Machiels, Lecertua, Moulin, Paque.</p>
+   <p class="pin">Vanina Ickx = Tochter von Jacky Ickx, einem der größten Namen des belgischen Motorsports.</p></div>`},
+ {cat:"side",title:"Promi-Faktor",sub:"Namen fürs Publikum",html:`
+   <div class="dsec"><ul class="dlist">
+   <li><span class="k">#46</span><span class="v"><b>Valentino Rossi</b> (BMW WRT) — der größte Publikumsmagnet</span></li>
+   <li><span class="k">#50</span><span class="v"><b>Arthur Leclerc</b> (Ferrari) — Bruder von Charles</span></li>
+   <li><span class="k">#3</span><span class="v"><b>Jules Gounon</b> (Mercedes) — 2× Spa-Sieger, Verstappen-Banner</span></li>
+   <li><span class="k">#98</span><span class="v"><b>Raffaele Marciello</b> + Jake Dennis (Formel-E-Champ)</span></li>
+   <li><span class="k">#48/#17</span><span class="v">Die 4 Nürburgring-24h-Sieger 2026: Stolz, Engel, Martin, Schiller</span></li>
+   </ul></div>`},
+ {cat:"side",title:"razoon: Traum vom Spa-Debüt",sub:"#914 · österreichischer Underdog",html:`
+   <div class="dsec"><p>Der Rennstall <b>razoon – more than racing</b> (Eggersdorf bei Graz) gibt sein <b>Debüt beim weltgrößten GT3-Rennen</b> — erklärtes Ziel: ein starkes Klassenergebnis. Internationales Quartett: Kenzie Beecroft & Ed McDermott (beide aus dem britischen GT-Sport), Ex-Supercars-Pilot Bryce Fullwood und der erfahrene Carl Bennett (Thai-Lizenz, WEC/IMSA).</p>
+   <p>Teameigner Dominik Olbert: bei 69/70 Autos zähle vor allem, fehlerfrei durchzukommen. razoon feierte zuletzt einen Debütsieg in der GT2 European Series und bringt zusätzlich zwei BMW M4 GT4 ins Rahmenprogramm.</p>
+   <p class="pin">Sympathische Underdog-/Heimkontinent-Story für die deutschsprachige Übertragung.</p></div>`},
+ {cat:"side",title:"David Pittard — der 24h-Spezialist",sub:"#991 Paradine · Verstärkung",html:`
+   <div class="dsec"><p>Paradine holt für die #991 (Bronze) den 34-jährigen <b>David Pittard</b>: Ex-Aston-Martin-Werksfahrer, <b>24h-Nürburgring-Sieger 2023</b> (im privat eingesetzten Ferrari), FIA-WEC-Klassensieger und Le-Mans-Podestfahrer. Dazu kommt der 20-jährige <b>Leyton Fourie</b>, frisch gekürter ADAC-GT-Masters-Halbzeitmeister.</p>
+   <p class="pin">Gute Mischung aus Routine und Jugend — Pittard ist bei den großen Langstreckenrennen eine Bank.</p></div>`}
+];
+
+/* ===== STATE ===== */
+let activeCat="teams", activeCls="ALLE", query="";
+const CATS=[
+ {id:"teams",label:"Teams",icon:"🏁"},
+ {id:"themen",label:"Aktuelle Themen",icon:"🔥"},
+ {id:"reg",label:"Reglement",icon:"📋"},
+ {id:"zeit",label:"Zeitplan",icon:"⏱"},
+ {id:"erg",label:"Ergebnisse",icon:"📊"},
+ {id:"side",label:"Sidefacts",icon:"💡"}
+];
+const CLASSES=["ALLE","PRO","PRO-AM","GOLD","SILVER","BRONZE"];
+const CUSTOM_STORAGE_KEY="spa24_custom_entries_v1";
+let customTeams=loadCustomTeams();
+
+const $=id=>document.getElementById(id);
+const norm=s=>(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+const allTeams=()=>[...TEAMS,...customTeams];
+
+function loadCustomTeams(){
+  try{
+    const raw=localStorage.getItem(CUSTOM_STORAGE_KEY);
+    const parsed=raw?JSON.parse(raw):[];
+    return Array.isArray(parsed)?parsed:[];
+  }catch(_){ return []; }
+}
+function persistCustomTeams(){
+  localStorage.setItem(CUSTOM_STORAGE_KEY,JSON.stringify(customTeams));
+}
+function splitLines(v){
+  return String(v||"").split("\n").map(s=>s.trim()).filter(Boolean);
+}
+function openEntrySheet(){
+  $("entry-sheet").classList.add("on");
+}
+function closeEntrySheet(){
+  $("entry-sheet").classList.remove("on");
+}
+function resetEntryForm(){
+  $("entry-number").value="";
+  $("entry-team").value="";
+  $("entry-car").value="";
+  $("entry-class").value="PRO";
+  $("entry-drivers").value="";
+  $("entry-hooks").value="";
+}
+function saveEntry(){
+  const n=$("entry-number").value.trim();
+  const team=$("entry-team").value.trim();
+  const car=$("entry-car").value.trim();
+  const cls=$("entry-class").value.trim();
+  const d=splitLines($("entry-drivers").value);
+  const hooks=splitLines($("entry-hooks").value);
+  if(!n||!team||!car){
+    alert("Bitte mindestens Startnummer, Team und Auto ausfüllen.");
+    return;
+  }
+  if(allTeams().some(t=>t.n===n)){
+    alert("Die Startnummer existiert bereits.");
+    return;
+  }
+  customTeams.unshift({n,team,car,cls,d,hooks,isCustom:true});
+  persistCustomTeams();
+  resetEntryForm();
+  closeEntrySheet();
+  activeCat="teams";
+  renderAll();
+}
+function deleteCustomEntry(num){
+  const idx=customTeams.findIndex(t=>t.n===num);
+  if(idx<0) return;
+  customTeams.splice(idx,1);
+  persistCustomTeams();
+  $("detail").classList.remove("on");
+  renderList();
+}
+
+function renderPills(){
+  $("pills").innerHTML=CATS.map(c=>`<button class="pill ${c.id===activeCat?'on':''}" data-cat="${c.id}"><span>${c.icon}</span>${c.label}</button>`).join("");
+  document.querySelectorAll('.pill').forEach(b=>b.onclick=()=>{activeCat=b.dataset.cat;activeCls="ALLE";renderAll()});
+}
+function renderChips(){
+  const wrap=$("chips");
+  if(activeCat!=="teams"){wrap.style.display="none";return}
+  wrap.style.display="flex";
+  wrap.innerHTML=CLASSES.map(c=>`<button class="chip ${c===activeCls?'on':''}" data-c="${c}">${c}</button>`).join("");
+  document.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{activeCls=b.dataset.c;renderList()});
+}
+
+function teamMatches(t){
+  if(activeCls!=="ALLE" && t.cls!==activeCls) return false;
+  if(!query) return true;
+  const hay=norm([t.n,t.team,t.car,MAN[t.car],t.cls,(t.d||[]).join(" "),(t.hooks||[]).join(" ")].join(" "));
+  return query.split(/\s+/).every(w=>hay.includes(w));
+}
+function infoMatches(it){
+  if(it.cat!==activeCat) return false;
+  if(!query) return true;
+  const hay=norm([it.title,it.sub,it.html].join(" "));
+  return query.split(/\s+/).every(w=>hay.includes(w));
+}
+
+function renderList(){
+  const list=$("list"); let html=""; let n=0;
+  if(activeCat==="teams"){
+    const order=["PRO","PRO-AM","GOLD","SILVER","BRONZE"];
+    const shown=allTeams().filter(teamMatches);
+    n=shown.length;
+    const groups=activeCls==="ALLE"?order:[activeCls];
+    groups.forEach(cl=>{
+      const g=shown.filter(t=>t.cls===cl);
+      if(!g.length) return;
+      html+=`<div class="seclabel">${cl} · ${g.length}</div>`;
+      g.forEach(t=>{
+        const cc=t.cls.replace("-","");
+        const drv=(t.d||[]).filter(x=>x&&x!=="TBA");
+        html+=`<div class="card" data-team="${t.n}"><div class="crow">
+          <div class="num">${t.n}</div>
+          <div class="cmain">
+            <div class="cteam">${t.team}</div>
+            <div class="ccar">${MAN[t.car]||""} · ${t.car}</div>
+            <div class="drow">${drv.map(d=>`<b>${d.split(' ').pop()}</b>`).join(" · ")}</div>
+            ${(t.hooks&&t.hooks.length)?`<div class="hooks">${t.hooks.slice(0,3).map(h=>`<span class="hook${t.isCustom?' custom':''}">${h}</span>`).join("")}</div>`:""}
+            ${t.isCustom?`<div class="customflag">Eigener Eintrag</div>`:""}
+          </div>
+          <div class="ctag"><span class="clsbadge ${cc}">${t.cls}</span></div>
+        </div></div>`;
+      });
+    });
+  } else {
+    const shown=INFO.filter(infoMatches);
+    n=shown.length;
+    shown.forEach((it,i)=>{
+      const idx=INFO.indexOf(it);
+      html+=`<div class="card" data-info="${idx}"><div class="crow">
+        <div class="cmain"><div class="cteam">${it.title}</div><div class="ccar">${it.sub||""}</div></div>
+        <div class="ctag"><span class="clsbadge INFO">›</span></div>
+      </div></div>`;
+    });
+  }
+  list.innerHTML = html || `<div class="empty">Keine Treffer.<br>Filter oder Suche anpassen.</div>`;
+  $("count").textContent = n+(activeCat==="teams"?" Autos":" Einträge");
+  document.querySelectorAll('[data-team]').forEach(c=>c.onclick=()=>showTeam(c.dataset.team));
+  document.querySelectorAll('[data-info]').forEach(c=>c.onclick=()=>showInfo(c.dataset.info));
+}
+
+function showTeam(num){
+  const t=allTeams().find(x=>x.n===num); if(!t) return;
+  const cc=t.cls.replace("-","");
+  const drv=(t.d||[]);
+  const body=`
+    <div class="dnum"><span class="n">${t.n}</span><span class="clsbadge ${cc}" style="font-size:12px;padding:5px 10px">${t.cls}</span></div>
+    <div class="dtitle">${t.team}</div>
+    <div class="dsub">${MAN[t.car]||""} · ${t.car}</div>
+    ${t.isCustom?`<div class="customflag">Eigener Eintrag</div>`:""}
+    <div class="dsec"><h3>Fahrer</h3><div class="drivers">
+    ${drv.map((d,i)=>`<div class="driver"><span class="di">${i+1}</span><span class="dn">${d==="TBA"?'<span style="color:var(--dim)">noch offen (TBA)</span>':d}</span></div>`).join("")}
+    </div></div>
+    ${(t.hooks&&t.hooks.length)?`<div class="dsec"><h3>Aufhänger / On-Air</h3><div class="hooks">${t.hooks.map(h=>`<span class="hook">${h}</span>`).join("")}</div></div>`:""}
+    <div class="pin">Klassen-Vorgabe ${t.cls}: ${clsRule(t.cls)}</div>
+    ${t.isCustom?`<button class="mutebtn" onclick="deleteCustomEntry('${t.n}')">Eintrag löschen</button>`:""}`;
+  openDetail(body);
+}
+function clsRule(c){
+  return {
+   "PRO":"beliebige Kategorisierung (Platinum/Gold), kein Bronze.",
+   "PRO-AM":"Amateur-Stufe mit Profi-Verstärkung (Bronze + Pro-Mix).",
+   "GOLD":"Gold + Gold + Silber.",
+   "SILVER":"drei Silber-Fahrer.",
+   "BRONZE":"Platinum + Silber + Bronze (mind. 1 echter Bronze)."
+  }[c]||"";
+}
+function showInfo(idx){ const it=INFO[+idx]; if(!it) return;
+  openDetail(`<div class="dtitle">${it.title}</div><div class="dsub">${it.sub||""}</div>${it.html}`);
+}
+function openDetail(html){ $("dbody").innerHTML=html+`<div class="foot">24h Spa 2026 · Stand 11.06.2026</div>`; $("detail").classList.add("on"); $("dbody").scrollTop=0; }
+$("back").onclick=()=>$("detail").classList.remove("on");
+window.deleteCustomEntry=deleteCustomEntry;
+$("add-entry-btn").onclick=()=>openEntrySheet();
+$("entry-close").onclick=()=>(closeEntrySheet());
+$("entry-cancel").onclick=()=>(closeEntrySheet());
+$("entry-save").onclick=saveEntry;
+$("entry-sheet").addEventListener("click",e=>{ if(e.target.id==="entry-sheet") closeEntrySheet(); });
+
+function renderAll(){ renderPills(); renderChips(); renderList(); }
+$("q").addEventListener("input",e=>{query=norm(e.target.value.trim());renderList()});
+renderAll();
+</script>
+</body>
+</html>
