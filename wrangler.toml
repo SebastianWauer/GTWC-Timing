@@ -16,11 +16,6 @@ class_name = "TimingState"
 tag = "v1"
 new_classes = ["TimingState"]
 
-# Cron trigger: pings the DO every minute to keep polling alive
-# The DO alarm self-reschedules every 15s, cron just ensures it starts after hibernation
-[[triggers.crons]]
-cron = "* * * * *"
-
 [vars]
 SRO_FTP_HOST = "xml-motorsport.sportresult.com"
 SRO_FTP_PORT = "21"

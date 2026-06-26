@@ -19,11 +19,4 @@ export default {
     // Static assets
     return env.ASSETS.fetch(request);
   },
-
-  // Cron trigger — ping the DO to keep FTP polling alive
-  async scheduled(_event, env) {
-    const id = env.TIMING_STATE.idFromName('singleton');
-    const stub = env.TIMING_STATE.get(id);
-    await stub.fetch(new Request('https://internal/_cron'));
-  },
 };
