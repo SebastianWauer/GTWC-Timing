@@ -165,6 +165,50 @@ export async function openFtp(config) {
   return ftp;
 }
 
+// -----------------------------------------------------------------------
+// Connection probe — figure out which transport the server actually wants
+// -----------------------------------------------------------------------
+
+function _readWithTimeout(reader, ms) {
+  return Promise.race([
+    reader.read(),
+    new Promise((_, rej) => setTimeout(() => rej(new Error('read timeout')), ms)),
+  ]);
+}
+
+async function _probeMode(host, port, opts, label) {
+  const result = { mode: label, port };
+  let socket;
+  try {
+    socket = opts ? connect({ hostname: host, port }, opts) : connect({ hostname: host, port });
+    const reader = socket.readable.getReader();
+    try {
+      const { done, value } = await _readWithTimeout(reader, 8000);
+      if (done) { result.outcome = 'closed-immediately (no bytes)'; }
+      else { result.outcome = 'GOT DATA'; result.welcome = dec.decode(value).slice(0, 120); }
+    } catch (e) {
+      result.outcome = `read-error: ${e.message}`;
+    } finally {
+      try { reader.releaseLock(); } catch (_) {}
+    }
+  } catch (e) {
+    result.outcome = `connect-error: ${e.message}`;
+  } finally {
+    try { socket && socket.close(); } catch (_) {}
+  }
+  return result;
+}
+
+/** Try multiple transports/ports and report how far each gets. */
+export async function probeFtp(host) {
+  const results = [];
+  results.push(await _probeMode(host, 21, null, 'plain-21'));
+  results.push(await _probeMode(host, 21, { secureTransport: 'on' }, 'implicit-tls-21'));
+  results.push(await _probeMode(host, 990, { secureTransport: 'on' }, 'implicit-tls-990'));
+  results.push(await _probeMode(host, 21, { secureTransport: 'starttls' }, 'starttls-handle-21'));
+  return results;
+}
+
 /**
  * Find the latest active session for EACH series key.
  * Returns Map<seriesKey, { path, label }> — only series with an active session are included.

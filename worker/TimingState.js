@@ -1,7 +1,7 @@
 import { DataStore } from './data-store.js';
 import { buildViewModel } from './timing-logic.js';
 import { parseXml } from './xml-parser.js';
-import { openFtp, findSessionsPerSeries, checkFilesForSession } from './ftp-cf.js';
+import { openFtp, findSessionsPerSeries, checkFilesForSession, probeFtp } from './ftp-cf.js';
 
 // How long one burst keeps the FTP connection open (ms).
 // Longer = fewer reconnects = gentler on the connection-limited FTP server.
@@ -19,6 +19,7 @@ export class TimingState {
     this.state = state;
     this.env = env;
     this._polling = false;
+    this._probing = false;
     this._lastDiag = null;
     this._activeSessions = null; // Map<seriesKey, {path,label}> from last discovery
     this._lastScanAt = 0;
@@ -94,6 +95,24 @@ export class TimingState {
       return Response.json({ ok: true });
     }
 
+    // Probe: test which FTP transport/port the server accepts
+    if (url.pathname === '/api/debug/probe') {
+      const auth = request.headers.get('X-Ingest-Secret');
+      if (this.env.INGEST_SECRET && auth !== this.env.INGEST_SECRET) {
+        return new Response('Unauthorized', { status: 401 });
+      }
+      const host = this.env.SRO_FTP_HOST || 'xml-motorsport.sportresult.com';
+      this._probing = true; // pause burst polling during the probe
+      try {
+        const results = await probeFtp(host);
+        return Response.json({ host, results });
+      } catch (e) {
+        return Response.json({ host, error: e.message, stack: e.stack });
+      } finally {
+        this._probing = false;
+      }
+    }
+
     // Debug: show what's currently detected per series (protected)
     if (url.pathname === '/api/debug/ftp') {
       const auth = request.headers.get('X-Ingest-Secret');
@@ -121,6 +140,7 @@ export class TimingState {
 
   async alarm() {
     if (this._polling) return;
+    if (this._probing) { await this._scheduleAlarm(BURST_GAP_MS); return; }
     this._polling = true;
     try {
       await this._runBurst();
