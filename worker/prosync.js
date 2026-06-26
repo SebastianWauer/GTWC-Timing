@@ -188,7 +188,11 @@ export function buildSnapshot({ timing, detail, sessionName, lapHistoryStore }) 
   for (const [cid, comp] of Object.entries(competitors)) {
     const r = results[cid]?.MainResult || {};
     const cls = classes[comp.ClassId] || {};
-    const nr = String(comp.Bib ?? '');
+    const nr = String(comp.Bib ?? '').trim();
+
+    // Skip entries whose start number doesn't begin with a digit
+    // (safety car, course cars, test entries, etc.)
+    if (!/^\d/.test(nr)) continue;
 
     const drivers = Object.values(comp.Drivers || {})
       .sort((a, b) => (a.ListIndex || 0) - (b.ListIndex || 0))
