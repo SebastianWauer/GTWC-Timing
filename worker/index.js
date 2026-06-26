@@ -4,18 +4,26 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // Route WebSocket and /api/* and /ingest to the Durable Object
+    // Route WebSocket, /api/*, /ingest, /_cron to the Durable Object
     if (
       request.headers.get('Upgrade') === 'websocket' ||
       url.pathname.startsWith('/api/') ||
-      url.pathname === '/ingest'
+      url.pathname === '/ingest' ||
+      url.pathname === '/_cron'
     ) {
       const id = env.TIMING_STATE.idFromName('singleton');
       const stub = env.TIMING_STATE.get(id);
       return stub.fetch(request);
     }
 
-    // All other requests → static assets
+    // Static assets
     return env.ASSETS.fetch(request);
+  },
+
+  // Cron trigger — ping the DO to keep FTP polling alive
+  async scheduled(_event, env) {
+    const id = env.TIMING_STATE.idFromName('singleton');
+    const stub = env.TIMING_STATE.get(id);
+    await stub.fetch(new Request('https://internal/_cron'));
   },
 };

@@ -1,6 +1,10 @@
 import { DataStore } from './data-store.js';
 import { buildViewModel } from './timing-logic.js';
 import { parseXml } from './xml-parser.js';
+import { pollFtp } from './ftp-cf.js';
+
+// Poll interval for FTP via DO Alarm (ms)
+const POLL_INTERVAL_MS = 15_000;
 
 export class TimingState {
   constructor(state, env) {
@@ -8,8 +12,12 @@ export class TimingState {
     this.env = env;
     this.store = new DataStore();
     this.currentSessionLabel = '';
+    this._lastVersions = {};
+    this._polling = false;
+
     // Map<WebSocket, { classFilter: string|null }>
     this.connections = new Map();
+
     this.state.setWebSocketAutoResponse(
       new WebSocketRequestResponsePair('ping', 'pong')
     );
@@ -23,7 +31,7 @@ export class TimingState {
       return this._handleWebSocket(request);
     }
 
-    // Ingest from SFTP poller
+    // Ingest from external poller (fallback if FTP polling is unavailable)
     if (url.pathname === '/ingest' && request.method === 'POST') {
       return this._handleIngest(request);
     }
@@ -44,7 +52,80 @@ export class TimingState {
       return Response.json(car);
     }
 
+    // Cron ping — triggers/resets the polling alarm
+    if (url.pathname === '/_cron') {
+      await this._scheduleAlarm(0);
+      return Response.json({ ok: true, next: 'alarm scheduled' });
+    }
+
     return new Response('Not found', { status: 404 });
+  }
+
+  // -----------------------------------------------------------------------
+  // DO Alarm — FTP polling
+  // -----------------------------------------------------------------------
+
+  async alarm() {
+    if (this._polling) return; // prevent concurrent runs
+    this._polling = true;
+    try {
+      await this._runFtpPoll();
+    } catch (err) {
+      console.error('[TimingState] alarm error:', err.message);
+    } finally {
+      this._polling = false;
+      // Always reschedule so polling continues
+      await this._scheduleAlarm(POLL_INTERVAL_MS);
+    }
+  }
+
+  async _runFtpPoll() {
+    const ftpConfig = {
+      host: this.env.SRO_FTP_HOST || 'xml-motorsport.sportresult.com',
+      port: parseInt(this.env.SRO_FTP_PORT || '21', 10),
+      user: this.env.SRO_FTP_USER || 'racing-sro',
+      pass: this.env.SRO_FTP_PASS,
+      root: this.env.SRO_FTP_ROOT || 'SRO',
+      seriesPriority: (this.env.SRO_SERIES_PRIORITY || 'GTWorldCh,GT4')
+        .split(',').map(v => v.trim()).filter(Boolean),
+    };
+
+    if (!ftpConfig.pass) {
+      console.warn('[TimingState] SRO_FTP_PASS not set — skipping FTP poll');
+      return;
+    }
+
+    const { session, files, newVersions } = await pollFtp(ftpConfig, this._lastVersions);
+    this._lastVersions = newVersions;
+
+    if (session && session.label !== this.currentSessionLabel) {
+      if (this.currentSessionLabel) {
+        this.store.reset();
+        this._lastVersions = {};
+      }
+      this.currentSessionLabel = session.label;
+    }
+
+    let changed = false;
+    for (const { filename, content } of files) {
+      const parsed = parseXml(filename, content);
+      if (!parsed) continue;
+      switch (parsed.type) {
+        case 'entryList':       this.store.applyEntryList(parsed); break;
+        case 'resultList':      this.store.applyResultList(parsed); break;
+        case 'announcements':   this.store.applyAnnouncements(parsed); break;
+        case 'eventListTotal':  this.store.applyEventList({ ...parsed, isTotal: true }); break;
+        case 'eventListUpdate': this.store.applyEventList({ ...parsed, isTotal: false }); break;
+      }
+      changed = true;
+    }
+
+    if (changed) this._broadcast();
+  }
+
+  async _scheduleAlarm(delayMs) {
+    const next = Date.now() + delayMs;
+    await this.state.storage.setAlarm(next);
   }
 
   // -----------------------------------------------------------------------
@@ -58,7 +139,9 @@ export class TimingState {
     this.state.acceptWebSocket(server);
     this.connections.set(server, { classFilter: null });
 
-    // Send current state immediately
+    // Kick-start polling if not already running
+    this._scheduleAlarm(0).catch(() => {});
+
     const snapshot = this.store.getSnapshot(null);
     const vm = buildViewModel(snapshot, null);
     vm.sessionLabel = this.currentSessionLabel;
@@ -98,7 +181,7 @@ export class TimingState {
   }
 
   // -----------------------------------------------------------------------
-  // Ingest endpoint — called by SFTP poller
+  // Ingest endpoint — fallback for external poller
   // -----------------------------------------------------------------------
 
   async _handleIngest(request) {

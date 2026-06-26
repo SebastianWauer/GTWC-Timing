@@ -27,7 +27,12 @@ jobs:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           command: deploy
 
-      - name: Set INGEST_SECRET in Cloudflare
+      - name: Set SRO_FTP_PASS secret
+        run: echo "${{ secrets.SRO_FTP_PASS }}" | npx wrangler secret put SRO_FTP_PASS
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+
+      - name: Set INGEST_SECRET
         run: echo "${{ secrets.INGEST_SECRET }}" | npx wrangler secret put INGEST_SECRET
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
