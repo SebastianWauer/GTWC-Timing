@@ -419,6 +419,18 @@ body {
   border-radius: 2px;
   letter-spacing: 0.5px;
 }
+.status-badge {
+  display: inline-block;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 2px;
+  letter-spacing: 0.5px;
+}
+.status-dnf { background: #b02a2a; }
+.status-dns { background: #6a6a6a; }
+.status-exc { background: #7a2a7a; }
 
 /* Time cell colour variants */
 .time-purple { color: var(--color-time-purple); font-weight: 700; }

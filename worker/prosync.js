@@ -135,6 +135,16 @@ export function parseMs(t) {
 
 const FLAG_MAP = { 0: 'GREEN', 1: 'GREEN', 2: 'YELLOW', 3: 'FCY', 4: 'SC', 5: 'RED', 6: 'CHEQUERED' };
 
+// Result status is a bit-flag (Swiss Timing): 4=DNF, 8=Excluded, 16=DNS.
+// Anything without these bits is running/classified.
+function statusLabel(st) {
+  const s = Number(st) || 0;
+  if (s & 16) return 'DNS';
+  if (s & 8) return 'EXC';
+  if (s & 4) return 'DNF';
+  return null;
+}
+
 // Normalise Swiss Timing class names to the clean display names the dashboard
 // uses. In particular "PAM" / "Pro-AM Cup" → "Pro-Am" (matches the PRO-AM
 // colour + all our Pro-Am class logic). Returns "" for unknown.
@@ -245,6 +255,7 @@ export function buildSnapshot({ timing, detail, sessionName, lapHistoryStore }) 
       activeDriverName,
       team: comp.TeamName || '',
       car: comp.CarTypeName || '',
+      vehicle: comp.CarTypeName || '',
       manufacturer: normalizeManufacturer(comp.ManufacturerName),
       lastLap: { raw: r.LastLap?.Time, ms: lastMs },
       bestLap: { raw: r.BestTime?.Time, ms: bestMs },
@@ -254,6 +265,7 @@ export function buildSnapshot({ timing, detail, sessionName, lapHistoryStore }) 
       pitCount: comp.PitStopCount ?? 0,
       inPit: !!comp.InPitLane,
       status: r.Status,
+      statusLabel: statusLabel(r.Status),
       gap: fmtGap(r.Behind),            // to overall leader
       interval: fmtGap(r.Diff),         // to car ahead (overall)
       classGap: fmtGap(r.ClassBehind),  // to class leader
@@ -274,11 +286,16 @@ export function buildSnapshot({ timing, detail, sessionName, lapHistoryStore }) 
     startTime: untInfo.StartRealTime || null,
   };
 
+  // Race Control messages (most recent last, matching the sidebar renderer)
+  const announcements = (detail?.Messages || [])
+    .map(m => ({ dt: m.Time, text: m.Text, type: m.Type }))
+    .reverse();
+
   return {
     cars,
     allCars: cars,
     session,
-    announcements: [],
+    announcements,
     classes: classListFrom(classes),
     manufacturers: {},
     bestSectors: {},

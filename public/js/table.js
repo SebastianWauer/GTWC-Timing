@@ -113,8 +113,11 @@ function buildCellContent(car, sectorKeys) {
     else if (pc < 0) { pcHtml = `${pc}`;   pcClass = 'pos-lost'; }
     else             { pcHtml = '=';        pcClass = 'pos-same'; }
   }
-  let html = `<td class="col-pos">${car.pos || ''}</td>`;
-  html += `<td class="col-poschange ${pcClass}">${pcHtml}</td>`;
+  const posCell = car.statusLabel
+    ? `<span class="status-badge status-${car.statusLabel.toLowerCase()}">${car.statusLabel}</span>`
+    : (car.pos || '');
+  let html = `<td class="col-pos">${posCell}</td>`;
+  html += `<td class="col-poschange ${pcClass}">${car.statusLabel ? '' : pcHtml}</td>`;
 
   // # (number badge with class colour)
   const cc = car.classColor || {};

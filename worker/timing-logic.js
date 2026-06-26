@@ -194,6 +194,7 @@ export function buildViewModel(snapshot, classFilter) {
         ? formatDuration(car._pitEntryTimeMs - car._stintStartTimeMs)
         : (!car.inPit && car._stintStartTimeMs ? formatDuration(now - car._stintStartTimeMs) : '-'),
       tlw: car.tlw,
+      statusLabel: car.statusLabel || null,
       sectors: sectorViews,
       classBestLap: carClassBestLap,
       classSectorBests: carClassSectors,
