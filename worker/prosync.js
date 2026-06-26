@@ -164,6 +164,8 @@ export function buildSnapshot({ timing, detail, sessionName, lapHistoryStore }) 
         country: d.CountryCode,
         active: d.Id === comp.CurrentDriverId,
       }));
+    const activeDriver = drivers.find(d => d.active);
+    const activeDriverName = activeDriver?.name || '';
 
     // Sectors from the last lap's intermediates
     const sectors = {};
@@ -198,6 +200,7 @@ export function buildSnapshot({ timing, detail, sessionName, lapHistoryStore }) 
       classNameFull: cls.Name || '',
       drivers,
       activeDriverId: comp.CurrentDriverId,
+      activeDriverName,
       team: comp.TeamName || '',
       car: comp.CarTypeName || '',
       manufacturer: comp.ManufacturerName || '',
