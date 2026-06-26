@@ -15,6 +15,7 @@ export class TimingState {
     this.state = state;
     this.env = env;
     this._polling = false;
+    this._lastDiag = null;
 
     // Per-series state: Map<seriesKey, { store, sessionLabel, lastVersions }>
     this._series = new Map();
@@ -119,6 +120,7 @@ export class TimingState {
       await this._runBurst();
     } catch (err) {
       console.error('[TimingState] burst error:', err.message);
+      this._lastDiag = { time: new Date().toISOString(), error: err.message, stack: err.stack };
     } finally {
       this._polling = false;
       await this._scheduleAlarm(BURST_GAP_MS);
@@ -144,11 +146,19 @@ export class TimingState {
     const burstEnd = Date.now() + BURST_DURATION_MS;
 
     try {
+      let firstScan = true;
       while (Date.now() < burstEnd) {
         const t0 = Date.now();
 
-        // Discover all active sessions per series on every burst check
-        const activeSessions = await findSessionsPerSeries(ftp, ftpConfig.root, seriesKeys);
+        // Discover all active sessions per series on every burst check.
+        // Capture full structure on the first scan of each burst for debugging.
+        const diag = firstScan ? { time: new Date().toISOString() } : null;
+        const activeSessions = await findSessionsPerSeries(ftp, ftpConfig.root, seriesKeys, diag);
+        if (diag) {
+          diag.detected = Array.from(activeSessions.entries()).map(([k, v]) => ({ key: k, label: v.label }));
+          this._lastDiag = diag;
+          firstScan = false;
+        }
 
         let anyChanged = false;
         for (const [key, session] of activeSessions) {
@@ -364,49 +374,16 @@ export class TimingState {
   }
 
   async _handleFtpDebug() {
-    const ftpConfig = {
-      host: this.env.SRO_FTP_HOST || 'xml-motorsport.sportresult.com',
-      port: parseInt(this.env.SRO_FTP_PORT || '21', 10),
-      user: this.env.SRO_FTP_USER || 'racing-sro',
-      pass: this.env.SRO_FTP_PASS,
-      root: this.env.SRO_FTP_ROOT || 'SRO',
-    };
-    const seriesKeys = this._getSeriesKeys();
-    if (!ftpConfig.pass) return Response.json({ error: 'SRO_FTP_PASS not set' });
-
-    let ftp = null;
-    try {
-      ftp = await openFtp(ftpConfig);
-
-      // Raw + parsed listing of the root, so we can see the actual format
-      const rootRaw = await ftp.listRaw(ftpConfig.root).catch(e => `LIST ERROR: ${e.message}`);
-      const eventDirs = (await ftp.list(ftpConfig.root)).filter(e => e.type === 'd');
-
-      const structure = {};
-      for (const ev of eventDirs) {
-        const evPath = `${ftpConfig.root}/${ev.name}`;
-        let comps;
-        try { comps = (await ftp.list(evPath)).filter(c => c.type === 'd'); } catch { structure[ev.name] = '(list failed)'; continue; }
-        structure[ev.name] = {};
-        for (const comp of comps) {
-          const matchedKey = seriesKeys.find(k => comp.name.includes(k)) || '(NO MATCH)';
-          const compPath = `${evPath}/${comp.name}`;
-          let sessions;
-          try { sessions = (await ftp.list(compPath)).filter(s => s.type === 'd').map(s => s.name); } catch { sessions = []; }
-          structure[ev.name][comp.name] = { matchedKey, sessions };
-        }
-      }
-      return Response.json({
-        seriesKeys,
-        rootRawListing: typeof rootRaw === 'string' ? rootRaw : rootRaw,
-        eventDirCount: eventDirs.length,
-        structure,
-      });
-    } catch (err) {
-      return Response.json({ error: err.message, stack: err.stack, seriesKeys }, { status: 200 });
-    } finally {
-      if (ftp) ftp.quit().catch(() => {});
-    }
+    // The burst poll holds the single allowed FTP connection, so we cannot
+    // open our own. Instead we return the diagnostics captured by the poll.
+    // Make sure polling is running.
+    await this._scheduleAlarm(0).catch(() => {});
+    return Response.json({
+      seriesKeys: this._getSeriesKeys(),
+      polling: this._polling,
+      lastDiag: this._lastDiag || null,
+      note: this._lastDiag ? undefined : 'No poll has completed yet — retry in a few seconds.',
+    });
   }
 
   async _handleListSessions() {

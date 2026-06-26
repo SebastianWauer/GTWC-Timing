@@ -168,24 +168,30 @@ export async function openFtp(config) {
 /**
  * Find the latest active session for EACH series key.
  * Returns Map<seriesKey, { path, label }> — only series with an active session are included.
+ * If `diag` is passed, it is filled with the full directory structure for debugging.
  */
-export async function findSessionsPerSeries(ftp, root, seriesKeys) {
+export async function findSessionsPerSeries(ftp, root, seriesKeys, diag = null) {
   const byKey = new Map(); // seriesKey -> [{ path, label, eventName }]
 
   let eventDirs;
   try { eventDirs = (await ftp.list(root)).filter(e => e.type === 'd'); } catch { return new Map(); }
 
+  if (diag) diag.structure = {};
+
   for (const ev of eventDirs) {
     const evPath = `${root}/${ev.name}`;
     let comps;
     try { comps = (await ftp.list(evPath)).filter(c => c.type === 'd'); } catch { continue; }
+    if (diag) diag.structure[ev.name] = {};
 
     for (const comp of comps) {
       const matchedKey = seriesKeys.find(k => comp.name.includes(k));
-      if (!matchedKey) continue;
       const compPath = `${evPath}/${comp.name}`;
       let sessions;
-      try { sessions = (await ftp.list(compPath)).filter(s => s.type === 'd'); } catch { continue; }
+      try { sessions = (await ftp.list(compPath)).filter(s => s.type === 'd'); } catch { sessions = []; }
+      if (diag) diag.structure[ev.name][comp.name] = { matchedKey: matchedKey || '(NO MATCH)', sessions: sessions.map(s => s.name) };
+
+      if (!matchedKey) continue;
       for (const sess of sessions) {
         if (!byKey.has(matchedKey)) byKey.set(matchedKey, []);
         byKey.get(matchedKey).push({
