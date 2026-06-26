@@ -87,6 +87,24 @@ export class TimingState {
       return Response.json({ ok: true });
     }
 
+    // Debug: show what's currently detected per series (protected)
+    if (url.pathname === '/api/debug/ftp') {
+      const auth = request.headers.get('X-Ingest-Secret');
+      if (this.env.INGEST_SECRET && auth !== this.env.INGEST_SECRET) {
+        return new Response('Unauthorized', { status: 401 });
+      }
+      return this._handleFtpDebug();
+    }
+
+    // Info: show active series state (public, no credentials exposed)
+    if (url.pathname === '/api/series') {
+      const result = {};
+      for (const [key, s] of this._series) {
+        result[key] = { sessionLabel: s.sessionLabel, carCount: s.store.cars.size };
+      }
+      return Response.json({ configured: this._getSeriesKeys(), active: result });
+    }
+
     return new Response('Not found', { status: 404 });
   }
 
@@ -343,6 +361,40 @@ export class TimingState {
     await this.env.SESSION_KV.put('index', JSON.stringify(index));
 
     console.log(`[archive] Saved ${seriesKey} session "${s.sessionLabel}" (${carCount} cars)`);
+  }
+
+  async _handleFtpDebug() {
+    const ftpConfig = {
+      host: this.env.SRO_FTP_HOST || 'xml-motorsport.sportresult.com',
+      port: parseInt(this.env.SRO_FTP_PORT || '21', 10),
+      user: this.env.SRO_FTP_USER || 'racing-sro',
+      pass: this.env.SRO_FTP_PASS,
+      root: this.env.SRO_FTP_ROOT || 'SRO',
+    };
+    const seriesKeys = this._getSeriesKeys();
+    if (!ftpConfig.pass) return Response.json({ error: 'SRO_FTP_PASS not set' });
+
+    const ftp = await openFtp(ftpConfig);
+    try {
+      const structure = {};
+      const eventDirs = (await ftp.list(ftpConfig.root)).filter(e => e.type === 'd');
+      for (const ev of eventDirs) {
+        const evPath = `${ftpConfig.root}/${ev.name}`;
+        let comps;
+        try { comps = (await ftp.list(evPath)).filter(c => c.type === 'd'); } catch { continue; }
+        structure[ev.name] = {};
+        for (const comp of comps) {
+          const matchedKey = seriesKeys.find(k => comp.name.includes(k)) || '(no match)';
+          const compPath = `${evPath}/${comp.name}`;
+          let sessions;
+          try { sessions = (await ftp.list(compPath)).filter(s => s.type === 'd').map(s => s.name); } catch { sessions = []; }
+          structure[ev.name][comp.name] = { matchedKey, sessions };
+        }
+      }
+      return Response.json({ seriesKeys, structure });
+    } finally {
+      ftp.quit().catch(() => {});
+    }
   }
 
   async _handleListSessions() {
