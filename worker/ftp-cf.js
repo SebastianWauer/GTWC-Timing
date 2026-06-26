@@ -147,77 +147,64 @@ function _concat(chunks) {
 }
 
 // -----------------------------------------------------------------------
-// High-level: poll SRO FTP for current session's latest ZIP files
+// High-level: open a persistent FTP connection for burst polling
 // -----------------------------------------------------------------------
 
 const DEFAULT_SERIES = ['GTWorldCh', 'GT4'];
 
-export async function pollFtp(config, lastVersions) {
-  const { host, port, user, pass, root, seriesPriority = DEFAULT_SERIES } = config;
-
+/** Open + authenticate. Returns the FtpSession (caller must call .quit()). */
+export async function openFtp(config) {
+  const { host, port = 21, user, pass } = config;
   const ftp = new FtpSession();
   await ftp.open(host, port);
   await ftp.auth(user, pass);
+  return ftp;
+}
 
-  const results = [];
+/**
+ * Check for changed files on an already-open FTP session.
+ * Returns { session, files, newVersions }.
+ * Does NOT open or close the FTP connection.
+ */
+export async function checkFiles(ftp, config, lastVersions) {
+  const { root, seriesPriority = DEFAULT_SERIES } = config;
   const newVersions = { ...lastVersions };
+  const results = [];
 
-  try {
-    const session = await findLatestSession(ftp, root, seriesPriority);
-    if (!session) {
-      await ftp.quit();
-      return { session: null, files: [], newVersions };
-    }
+  const session = await findLatestSession(ftp, root, seriesPriority);
+  if (!session) return { session: null, files: [], newVersions };
 
-    // Entry list – once per session path
-    const entryKey = session.path + ':ENTRY_LIST';
-    if (!lastVersions[entryKey]) {
-      const xml = await downloadLatestZip(ftp, session.path, 'ENTRY_LIST');
-      if (xml) {
-        newVersions[entryKey] = 'loaded';
-        results.push({ filename: 'ENTRY_LIST.XML', content: xml });
-      }
-    }
-
-    // Result list
-    const resultInfo = await findLatestVersion(ftp, session.path, 'RESULT_LIST');
-    const resultKey = session.path + ':RESULT_LIST';
-    if (resultInfo && resultInfo.version !== lastVersions[resultKey]) {
-      const xml = await downloadZip(ftp, session.path + '/' + resultInfo.name);
-      if (xml) {
-        newVersions[resultKey] = resultInfo.version;
-        results.push({ filename: 'RESULT_LIST.XML', content: xml });
-      }
-    }
-
-    // Event list update
-    const updateInfo = await findLatestVersion(ftp, session.path + '/Changes', 'EVENT_LIST_UPDATE');
-    const updateKey = session.path + ':EVENT_LIST_UPDATE';
-    if (updateInfo && updateInfo.version !== lastVersions[updateKey]) {
-      const xml = await downloadZip(ftp, session.path + '/Changes/' + updateInfo.name);
-      if (xml) {
-        newVersions[updateKey] = updateInfo.version;
-        results.push({ filename: 'EVENT_LIST_UPDATE.XML', content: xml });
-      }
-    }
-
-    // Event list total – once per session path
-    const totalKey = session.path + ':EVENT_LIST_TOTAL';
-    if (!lastVersions[totalKey]) {
-      const xml = await downloadLatestZip(ftp, session.path + '/FullVersion', 'EVENT_LIST_TOTAL');
-      if (xml) {
-        newVersions[totalKey] = 'loaded';
-        results.push({ filename: 'EVENT_LIST_TOTAL.XML', content: xml });
-      }
-    }
-
-    await ftp.quit();
-    return { session, files: results, newVersions };
-
-  } catch (err) {
-    try { await ftp.quit(); } catch (_) {}
-    throw err;
+  // Entry list – once per session path
+  const entryKey = session.path + ':ENTRY_LIST';
+  if (!lastVersions[entryKey]) {
+    const xml = await downloadLatestZip(ftp, session.path, 'ENTRY_LIST');
+    if (xml) { newVersions[entryKey] = 'loaded'; results.push({ filename: 'ENTRY_LIST.XML', content: xml }); }
   }
+
+  // Result list
+  const resultInfo = await findLatestVersion(ftp, session.path, 'RESULT_LIST');
+  const resultKey = session.path + ':RESULT_LIST';
+  if (resultInfo && resultInfo.version !== lastVersions[resultKey]) {
+    const xml = await downloadZip(ftp, session.path + '/' + resultInfo.name);
+    if (xml) { newVersions[resultKey] = resultInfo.version; results.push({ filename: 'RESULT_LIST.XML', content: xml }); }
+  }
+
+  // Event list update
+  const updateInfo = await findLatestVersion(ftp, session.path + '/Changes', 'EVENT_LIST_UPDATE');
+  const updateKey = session.path + ':EVENT_LIST_UPDATE';
+  if (updateInfo && updateInfo.version !== lastVersions[updateKey]) {
+    const xml = await downloadZip(ftp, session.path + '/Changes/' + updateInfo.name);
+    if (xml) { newVersions[updateKey] = updateInfo.version; results.push({ filename: 'EVENT_LIST_UPDATE.XML', content: xml }); }
+  }
+
+  // Event list total – once per session path
+  const totalKey = session.path + ':EVENT_LIST_TOTAL';
+  if (!lastVersions[totalKey]) {
+    const xml = await downloadLatestZip(ftp, session.path + '/FullVersion', 'EVENT_LIST_TOTAL');
+    if (xml) { newVersions[totalKey] = 'loaded'; results.push({ filename: 'EVENT_LIST_TOTAL.XML', content: xml }); }
+  }
+
+  return { session, files: results, newVersions };
 }
 
 async function findLatestSession(ftp, root, seriesPriority) {

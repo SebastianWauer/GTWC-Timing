@@ -1,10 +1,14 @@
 import { DataStore } from './data-store.js';
 import { buildViewModel } from './timing-logic.js';
 import { parseXml } from './xml-parser.js';
-import { pollFtp } from './ftp-cf.js';
+import { openFtp, checkFiles } from './ftp-cf.js';
 
-// Poll interval for FTP via DO Alarm (ms)
-const POLL_INTERVAL_MS = 15_000;
+// How long one burst keeps the FTP connection open (ms)
+const BURST_DURATION_MS = 25_000;
+// Delay between checks within a burst (ms) — as fast as the FTP server responds
+const CHECK_INTERVAL_MS = 2_000;
+// Gap between bursts (ms) — reconnect overhead
+const BURST_GAP_MS = 1_000;
 
 export class TimingState {
   constructor(state, env) {
@@ -66,20 +70,19 @@ export class TimingState {
   // -----------------------------------------------------------------------
 
   async alarm() {
-    if (this._polling) return; // prevent concurrent runs
+    if (this._polling) return;
     this._polling = true;
     try {
-      await this._runFtpPoll();
+      await this._runBurst();
     } catch (err) {
-      console.error('[TimingState] alarm error:', err.message);
+      console.error('[TimingState] burst error:', err.message);
     } finally {
       this._polling = false;
-      // Always reschedule so polling continues
-      await this._scheduleAlarm(POLL_INTERVAL_MS);
+      await this._scheduleAlarm(BURST_GAP_MS);
     }
   }
 
-  async _runFtpPoll() {
+  async _runBurst() {
     const ftpConfig = {
       host: this.env.SRO_FTP_HOST || 'xml-motorsport.sportresult.com',
       port: parseInt(this.env.SRO_FTP_PORT || '21', 10),
@@ -91,36 +94,51 @@ export class TimingState {
     };
 
     if (!ftpConfig.pass) {
-      console.warn('[TimingState] SRO_FTP_PASS not set — skipping FTP poll');
+      console.warn('[TimingState] SRO_FTP_PASS not set');
       return;
     }
 
-    const { session, files, newVersions } = await pollFtp(ftpConfig, this._lastVersions);
-    this._lastVersions = newVersions;
+    // Connect once, poll rapidly for BURST_DURATION_MS, then disconnect
+    const ftp = await openFtp(ftpConfig);
+    const burstEnd = Date.now() + BURST_DURATION_MS;
 
-    if (session && session.label !== this.currentSessionLabel) {
-      if (this.currentSessionLabel) {
-        this.store.reset();
-        this._lastVersions = {};
+    try {
+      while (Date.now() < burstEnd) {
+        const t0 = Date.now();
+        const { session, files, newVersions } = await checkFiles(ftp, ftpConfig, this._lastVersions);
+        this._lastVersions = newVersions;
+
+        if (session && session.label !== this.currentSessionLabel) {
+          if (this.currentSessionLabel) {
+            this.store.reset();
+            this._lastVersions = {};
+          }
+          this.currentSessionLabel = session.label;
+        }
+
+        let changed = false;
+        for (const { filename, content } of files) {
+          const parsed = parseXml(filename, content);
+          if (!parsed) continue;
+          switch (parsed.type) {
+            case 'entryList':       this.store.applyEntryList(parsed); break;
+            case 'resultList':      this.store.applyResultList(parsed); break;
+            case 'announcements':   this.store.applyAnnouncements(parsed); break;
+            case 'eventListTotal':  this.store.applyEventList({ ...parsed, isTotal: true }); break;
+            case 'eventListUpdate': this.store.applyEventList({ ...parsed, isTotal: false }); break;
+          }
+          changed = true;
+        }
+        if (changed) this._broadcast();
+
+        // Wait for the remainder of CHECK_INTERVAL_MS (minus time already spent)
+        const elapsed = Date.now() - t0;
+        const wait = Math.max(0, CHECK_INTERVAL_MS - elapsed);
+        if (wait > 0) await new Promise(r => setTimeout(r, wait));
       }
-      this.currentSessionLabel = session.label;
+    } finally {
+      ftp.quit().catch(() => {});
     }
-
-    let changed = false;
-    for (const { filename, content } of files) {
-      const parsed = parseXml(filename, content);
-      if (!parsed) continue;
-      switch (parsed.type) {
-        case 'entryList':       this.store.applyEntryList(parsed); break;
-        case 'resultList':      this.store.applyResultList(parsed); break;
-        case 'announcements':   this.store.applyAnnouncements(parsed); break;
-        case 'eventListTotal':  this.store.applyEventList({ ...parsed, isTotal: true }); break;
-        case 'eventListUpdate': this.store.applyEventList({ ...parsed, isTotal: false }); break;
-      }
-      changed = true;
-    }
-
-    if (changed) this._broadcast();
   }
 
   async _scheduleAlarm(delayMs) {
