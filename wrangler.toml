@@ -21,6 +21,10 @@ binding = "SESSION_KV"
 id = "GTWC_KV_ID"
 
 [vars]
+# Data source: "poller" = data is pushed in via /ingest from an external
+# poller running on a whitelisted IP (the timing FTP server blocks
+# Cloudflare's egress IPs, so the Worker cannot poll it directly).
+DATA_SOURCE = "poller"
 SRO_FTP_HOST = "xml-motorsport.sportresult.com"
 SRO_FTP_PORT = "21"
 SRO_FTP_USER = "racing-sro"

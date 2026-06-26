@@ -1,13 +1,21 @@
 'use strict';
 
 /**
- * SFTP Poller – verbindet sich mit dem SRO-SFTP-Server und POSTet
- * Dateiinhalte an den Cloudflare Worker.
+ * SFTP Poller (Multi-Series) – verbindet sich mit dem SRO-SFTP-Server und
+ * POSTet Dateiinhalte an den Cloudflare Worker.
+ *
+ * Läuft auf einer beim Timing-Anbieter freigeschalteten (whitelisted) IP,
+ * weil die Cloudflare-Worker-IPs vom Server blockiert werden.
+ *
+ * Für JEDE konfigurierte Serie (z.B. GTWorldCh + GT4) wird eine eigene
+ * Poller-Instanz gestartet. Jedes Event wird mit seinem `series`-Key an
+ * /ingest gepusht, sodass der Worker beide Serien getrennt führt.
  *
  * Umgebungsvariablen (.env oder process.env):
  *   SRO_SFTP_HOST, SRO_SFTP_PORT, SRO_FTP_USER, SRO_FTP_PASS
  *   SRO_SFTP_ROOT  (default: "SRO")
- *   WORKER_URL     (z.B. https://gtwc-timing.example.workers.dev)
+ *   SRO_SERIES_PRIORITY (default: "GTWorldCh,GT4")
+ *   WORKER_URL     (z.B. https://gtwc-timing.digiwtal.workers.dev)
  *   INGEST_SECRET  (muss mit Cloudflare Worker Secret übereinstimmen)
  */
 
@@ -28,7 +36,7 @@ const port = parseInt(process.env.SRO_SFTP_PORT || '22', 10);
 const user = process.env.SRO_FTP_USER;
 const password = process.env.SRO_FTP_PASS;
 const root = process.env.SRO_SFTP_ROOT || 'SRO';
-const seriesPriority = (process.env.SRO_SERIES_PRIORITY || 'GTWorldCh,GT4')
+const seriesKeys = (process.env.SRO_SERIES_PRIORITY || 'GTWorldCh,GT4')
   .split(',').map(v => v.trim()).filter(Boolean);
 
 const missing = [];
@@ -40,42 +48,73 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
-const poller = new SroSftpPoller({ host, port, user, password, root, seriesPriority });
-
 async function post(body) {
-  const res = await fetch(`${WORKER_URL}/ingest`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Ingest-Secret': INGEST_SECRET,
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    console.warn(`[Poller] Ingest failed ${res.status}: ${text}`);
+  try {
+    const res = await fetch(`${WORKER_URL}/ingest`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Ingest-Secret': INGEST_SECRET,
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      console.warn(`[Poller] Ingest failed ${res.status}: ${text}`);
+    }
+  } catch (e) {
+    console.warn('[Poller] Ingest error:', e.message);
   }
 }
 
-poller.on('connected', () => process.stdout.write('.'));
-poller.on('error', (err) => console.warn('\n[SFTP] Error:', err.message));
-poller.on('status', (msg) => console.log('\n[SFTP]', msg));
+/**
+ * Start one SFTP poller per series. Each instance only surfaces sessions
+ * for its own series (seriesPriority = [seriesKey]) and tags every event
+ * with that key when pushing to the Worker.
+ */
+function startSeries(seriesKey) {
+  const poller = new SroSftpPoller({
+    host, port, user, password, root,
+    seriesPriority: [seriesKey],
+  });
 
-poller.on('session', (label) => {
-  post({ type: 'sessionChanged', sessionLabel: label }).catch(() => {});
-});
+  let lastDot = 0;
+  poller.on('connected', () => {
+    const now = Date.now();
+    if (now - lastDot > 1000) { process.stdout.write(`·${seriesKey[0]}`); lastDot = now; }
+  });
+  poller.on('error', (err) => console.warn(`\n[${seriesKey}] SFTP Error:`, err.message));
+  poller.on('status', (msg) => console.log(`\n[${seriesKey}]`, msg));
 
-poller.on('sessionChanged', (label) => {
-  post({ type: 'sessionChanged', sessionLabel: label }).catch(() => {});
-});
+  poller.on('session', (label) => {
+    post({ type: 'sessionChanged', series: seriesKey, sessionLabel: label });
+  });
+  poller.on('sessionChanged', (label) => {
+    console.log(`\n[${seriesKey}] Session changed → ${label}`);
+    post({ type: 'sessionChanged', series: seriesKey, sessionLabel: label });
+  });
+  poller.on('file', (filename, content) => {
+    post({ type: 'file', series: seriesKey, filename, content });
+  });
 
-poller.on('file', (filename, content) => {
-  post({ type: 'file', filename, content }).catch(() => {});
-});
+  poller.start().catch(err => {
+    console.error(`[${seriesKey}] Start error:`, err.message);
+  });
 
-poller.start().catch(err => {
-  console.error('[SFTP] Start error:', err.message);
-  process.exit(1);
-});
+  console.log(`[Poller] Started series "${seriesKey}"`);
+  return poller;
+}
 
-console.log(`[Poller] Started → pushing to ${WORKER_URL}`);
+console.log(`[Poller] Multi-series → pushing to ${WORKER_URL}`);
+console.log(`[Poller] Series: ${seriesKeys.join(', ')}`);
+
+const pollers = seriesKeys.map(startSeries);
+
+// Graceful shutdown
+function shutdown() {
+  console.log('\n[Poller] Shutting down…');
+  for (const p of pollers) { try { p.stop(); } catch (_) {} }
+  process.exit(0);
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

@@ -91,8 +91,8 @@ export class TimingState {
     }
 
     if (url.pathname === '/_cron') {
-      await this._scheduleAlarm(0);
-      return Response.json({ ok: true });
+      if (this._ftpEnabled()) await this._scheduleAlarm(0);
+      return Response.json({ ok: true, ftpEnabled: this._ftpEnabled() });
     }
 
     // Probe: test which FTP transport/port the server accepts
@@ -138,7 +138,15 @@ export class TimingState {
   // DO Alarm — FTP burst polling
   // -----------------------------------------------------------------------
 
+  // Data source: 'poller' = data arrives via /ingest from an external poller
+  // (the Cloudflare egress IPs are blocked by the timing FTP server, so the
+  // Worker cannot poll FTP itself). Any other value = Worker polls FTP itself.
+  _ftpEnabled() {
+    return (this.env.DATA_SOURCE || 'worker-ftp') !== 'poller';
+  }
+
   async alarm() {
+    if (!this._ftpEnabled()) return; // poller mode — no self-scheduling FTP
     if (this._polling) return;
     if (this._probing) { await this._scheduleAlarm(BURST_GAP_MS); return; }
     this._polling = true;
@@ -250,7 +258,7 @@ export class TimingState {
     this.state.acceptWebSocket(server);
     this.connections.set(server, { classFilter: null, series: this._defaultSeriesKey() });
 
-    this._scheduleAlarm(0).catch(() => {});
+    if (this._ftpEnabled()) this._scheduleAlarm(0).catch(() => {});
 
     this._sendUpdate(server);
 
