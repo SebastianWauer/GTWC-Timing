@@ -202,11 +202,18 @@ async function _probeMode(host, port, opts, label) {
 /** Try multiple transports/ports and report how far each gets. */
 export async function probeFtp(host) {
   const results = [];
-  results.push(await _probeMode(host, 21, null, 'plain-21'));
-  results.push(await _probeMode(host, 21, { secureTransport: 'on' }, 'implicit-tls-21'));
-  results.push(await _probeMode(host, 990, { secureTransport: 'on' }, 'implicit-tls-990'));
-  results.push(await _probeMode(host, 21, { secureTransport: 'starttls' }, 'starttls-handle-21'));
+  results.push(await _probeMode(host, 21, null, 'target plain-21'));
+  results.push(await _probeMode(host, 22, null, 'target plain-22 (sftp banner)'));
+  results.push(await _probeMode(host, 990, { secureTransport: 'on' }, 'target implicit-tls-990'));
+  // Control tests: do outbound connections work at all from this Worker?
+  results.push(await _probeMode('ftp.gnu.org', 21, null, 'CONTROL ftp.gnu.org:21 (expect 220)'));
+  results.push(await _probeMode('one.one.one.one', 443, { secureTransport: 'on' }, 'CONTROL 1.1.1.1:443 TLS (expect data)'));
   return results;
+}
+
+/** Probe a single arbitrary target. opts e.g. {secureTransport:'on'} */
+export async function probeOne(host, port, tls) {
+  return _probeMode(host, port, tls ? { secureTransport: 'on' } : null, `${host}:${port}${tls ? ' tls' : ''}`);
 }
 
 /**
