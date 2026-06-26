@@ -374,26 +374,38 @@ export class TimingState {
     const seriesKeys = this._getSeriesKeys();
     if (!ftpConfig.pass) return Response.json({ error: 'SRO_FTP_PASS not set' });
 
-    const ftp = await openFtp(ftpConfig);
+    let ftp = null;
     try {
-      const structure = {};
+      ftp = await openFtp(ftpConfig);
+
+      // Raw + parsed listing of the root, so we can see the actual format
+      const rootRaw = await ftp.listRaw(ftpConfig.root).catch(e => `LIST ERROR: ${e.message}`);
       const eventDirs = (await ftp.list(ftpConfig.root)).filter(e => e.type === 'd');
+
+      const structure = {};
       for (const ev of eventDirs) {
         const evPath = `${ftpConfig.root}/${ev.name}`;
         let comps;
-        try { comps = (await ftp.list(evPath)).filter(c => c.type === 'd'); } catch { continue; }
+        try { comps = (await ftp.list(evPath)).filter(c => c.type === 'd'); } catch { structure[ev.name] = '(list failed)'; continue; }
         structure[ev.name] = {};
         for (const comp of comps) {
-          const matchedKey = seriesKeys.find(k => comp.name.includes(k)) || '(no match)';
+          const matchedKey = seriesKeys.find(k => comp.name.includes(k)) || '(NO MATCH)';
           const compPath = `${evPath}/${comp.name}`;
           let sessions;
           try { sessions = (await ftp.list(compPath)).filter(s => s.type === 'd').map(s => s.name); } catch { sessions = []; }
           structure[ev.name][comp.name] = { matchedKey, sessions };
         }
       }
-      return Response.json({ seriesKeys, structure });
+      return Response.json({
+        seriesKeys,
+        rootRawListing: typeof rootRaw === 'string' ? rootRaw : rootRaw,
+        eventDirCount: eventDirs.length,
+        structure,
+      });
+    } catch (err) {
+      return Response.json({ error: err.message, stack: err.stack, seriesKeys }, { status: 200 });
     } finally {
-      ftp.quit().catch(() => {});
+      if (ftp) ftp.quit().catch(() => {});
     }
   }
 

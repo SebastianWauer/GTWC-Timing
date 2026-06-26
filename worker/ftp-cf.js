@@ -33,6 +33,10 @@ class FtpSession {
   }
 
   async list(path) {
+    return this._parseListing(await this.listRaw(path));
+  }
+
+  async listRaw(path) {
     await this._cmd('TYPE A');
     await this._response();
     const [dh, dp] = await this._pasv();
@@ -41,7 +45,7 @@ class FtpSession {
     if (!r.startsWith('150') && !r.startsWith('125')) throw new Error(`LIST failed: ${r}`);
     const raw = await this._readData(dh, dp);
     await this._response(); // 226
-    return this._parseListing(dec.decode(raw));
+    return dec.decode(raw);
   }
 
   async get(path) {
