@@ -8,6 +8,7 @@ let _vm = null;
 let _selectedNr = null;
 let _selectedNrs = [];
 let _activeClass = null;
+let _activeSeries = 'GTWorldCh';
 let _sectorCount = 3;
 let _socket = null;   // native WebSocket
 let _replayMode = false;
@@ -29,6 +30,18 @@ document.addEventListener('DOMContentLoaded', () => {
   elLapInfo = document.getElementById('lap-info');
   elFilterBar = document.getElementById('filter-bar');
   elSidebar = document.getElementById('sidebar');
+
+  // Series selector
+  document.getElementById('series-bar')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.series-btn');
+    if (!btn) return;
+    const key = btn.dataset.series;
+    if (key === _activeSeries) return;
+    _activeSeries = key;
+    _activeClass = null;
+    for (const b of document.querySelectorAll('.series-btn')) b.classList.toggle('active', b.dataset.series === key);
+    socketSend({ type: 'setSeries', data: key });
+  });
   elFullscreenBtn = document.getElementById('fullscreen-btn');
   elTimingChartHost = document.getElementById('timing-chart-host');
   elTimingPaneRight = document.getElementById('timing-pane-right');
@@ -108,7 +121,8 @@ function connectSocket() {
   ws.addEventListener('open', () => {
     elStatusDot.className = 'connected';
     elStatusDot.title = 'Connected';
-    // Re-apply active class filter after reconnect
+    // Re-apply series and class filter after reconnect
+    ws.send(JSON.stringify({ type: 'setSeries', data: _activeSeries }));
     if (_activeClass) {
       ws.send(JSON.stringify({ type: 'setClassFilter', data: _activeClass }));
     }
@@ -132,6 +146,7 @@ function connectSocket() {
 
     if (msg.type === 'update') {
       _vm = msg.data;
+      updateSeriesBar(_vm.availableSeries);
       applyUpdate(_vm);
     }
 
@@ -200,6 +215,18 @@ function updateLocalTime() {
   if (!elLocalTime) return;
   const now = new Date();
   elLocalTime.textContent = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function updateSeriesBar(availableSeries) {
+  if (!availableSeries) return;
+  for (const s of availableSeries) {
+    const btn = document.querySelector(`.series-btn[data-series="${s.key}"]`);
+    if (!btn) continue;
+    btn.classList.toggle('active', s.key === _activeSeries);
+    // Dim series buttons that have no live data yet
+    btn.style.opacity = s.active ? '1' : '0.45';
+    btn.title = s.active ? s.label : `${s.label} (no active session)`;
+  }
 }
 
 // -----------------------------------------------------------------------

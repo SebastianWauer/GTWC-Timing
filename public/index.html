@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>GTWC Live Timing</title>
-  <link rel="stylesheet" href="/css/style.css?v=11">
+  <link rel="stylesheet" href="/css/style.css?v=12">
 </head>
 <body>
 
@@ -38,6 +38,15 @@
   <div id="replay-banner" class="hidden">
     <span id="replay-label"></span>
     <button onclick="window.AppControl.exitReplay()">&#8592; Back to Live</button>
+  </div>
+
+  <!-- ================================================================
+       Series Selector
+       ================================================================ -->
+  <div id="series-bar">
+    <span class="filter-label">Series:</span>
+    <button class="series-btn active" data-series="GTWorldCh">GTWC</button>
+    <button class="series-btn" data-series="GT4">GT4 European</button>
   </div>
 
   <!-- ================================================================
@@ -89,6 +98,6 @@
   <script src="/js/table.js?v=4"></script>
   <script src="/js/sidebar.js?v=11"></script>
   <script src="/js/sessions.js?v=1"></script>
-  <script src="/js/app.js?v=11"></script>
+  <script src="/js/app.js?v=12"></script>
 </body>
 </html>

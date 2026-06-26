@@ -117,6 +117,46 @@ body {
 .header-spacer { flex: 1; }
 
 /* ============================================================
+   Series Selector
+   ============================================================ */
+#series-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: #1a1a2e;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+#series-bar .filter-label {
+  font-size: 10px;
+  color: var(--color-text-dim);
+  text-transform: uppercase;
+  margin-right: 4px;
+}
+
+.series-btn {
+  padding: 3px 12px;
+  border-radius: 3px;
+  border: 1px solid #444;
+  background: #2a2a3e;
+  color: #ccc;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  transition: opacity 0.15s, border-color 0.15s;
+}
+.series-btn.active {
+  border-color: #7b8cde;
+  background: #3a3a5e;
+  color: #fff;
+}
+.series-btn:hover { opacity: 0.8; }
+
+/* ============================================================
    Class Filter Bar
    ============================================================ */
 #filter-bar {

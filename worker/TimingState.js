@@ -1,25 +1,25 @@
 import { DataStore } from './data-store.js';
 import { buildViewModel } from './timing-logic.js';
 import { parseXml } from './xml-parser.js';
-import { openFtp, checkFiles } from './ftp-cf.js';
+import { openFtp, findSessionsPerSeries, checkFilesForSession } from './ftp-cf.js';
 
 // How long one burst keeps the FTP connection open (ms)
 const BURST_DURATION_MS = 25_000;
-// Delay between checks within a burst (ms) — as fast as the FTP server responds
+// Delay between checks within a burst (ms)
 const CHECK_INTERVAL_MS = 2_000;
-// Gap between bursts (ms) — reconnect overhead
+// Gap between bursts (ms)
 const BURST_GAP_MS = 1_000;
 
 export class TimingState {
   constructor(state, env) {
     this.state = state;
     this.env = env;
-    this.store = new DataStore();
-    this.currentSessionLabel = '';
-    this._lastVersions = {};
     this._polling = false;
 
-    // Map<WebSocket, { classFilter: string|null }>
+    // Per-series state: Map<seriesKey, { store, sessionLabel, lastVersions }>
+    this._series = new Map();
+
+    // Map<WebSocket, { classFilter: string|null, series: string|null }>
     this.connections = new Map();
 
     this.state.setWebSocketAutoResponse(
@@ -27,36 +27,53 @@ export class TimingState {
     );
   }
 
+  _getSeriesKeys() {
+    return (this.env.SRO_SERIES_PRIORITY || 'GTWorldCh,GT4')
+      .split(',').map(v => v.trim()).filter(Boolean);
+  }
+
+  _getOrCreateSeries(key) {
+    if (!this._series.has(key)) {
+      this._series.set(key, { store: new DataStore(), sessionLabel: '', lastVersions: {} });
+    }
+    return this._series.get(key);
+  }
+
+  _defaultSeriesKey() {
+    return this._getSeriesKeys()[0] || 'GTWorldCh';
+  }
+
   async fetch(request) {
     const url = new URL(request.url);
 
-    // WebSocket upgrade
     if (request.headers.get('Upgrade') === 'websocket') {
       return this._handleWebSocket(request);
     }
 
-    // Ingest from external poller (fallback if FTP polling is unavailable)
     if (url.pathname === '/ingest' && request.method === 'POST') {
       return this._handleIngest(request);
     }
 
-    // REST API
     if (url.pathname === '/api/snapshot') {
+      const seriesKey = url.searchParams.get('series') || this._defaultSeriesKey();
       const classFilter = url.searchParams.get('class') || null;
-      const snapshot = this.store.getSnapshot(classFilter);
-      const vm = buildViewModel(snapshot, classFilter);
-      vm.sessionLabel = this.currentSessionLabel;
+      const s = this._series.get(seriesKey);
+      if (!s) return Response.json({ cars: [], session: {}, classes: [] });
+      const vm = buildViewModel(s.store.getSnapshot(classFilter), classFilter);
+      vm.sessionLabel = s.sessionLabel;
+      vm.series = seriesKey;
       return Response.json(vm);
     }
 
     if (url.pathname.startsWith('/api/car/')) {
       const nr = url.pathname.split('/').pop();
-      const car = this.store.cars.get(nr);
+      const seriesKey = url.searchParams.get('series') || this._defaultSeriesKey();
+      const s = this._series.get(seriesKey);
+      const car = s?.store.cars.get(nr);
       if (!car) return new Response('Not found', { status: 404 });
       return Response.json(car);
     }
 
-    // Session archive
     if (url.pathname === '/api/sessions' && request.method === 'GET') {
       return this._handleListSessions();
     }
@@ -65,17 +82,16 @@ export class TimingState {
       return this._handleGetSession(id);
     }
 
-    // Cron ping — triggers/resets the polling alarm
     if (url.pathname === '/_cron') {
       await this._scheduleAlarm(0);
-      return Response.json({ ok: true, next: 'alarm scheduled' });
+      return Response.json({ ok: true });
     }
 
     return new Response('Not found', { status: 404 });
   }
 
   // -----------------------------------------------------------------------
-  // DO Alarm — FTP polling
+  // DO Alarm — FTP burst polling
   // -----------------------------------------------------------------------
 
   async alarm() {
@@ -98,50 +114,60 @@ export class TimingState {
       user: this.env.SRO_FTP_USER || 'racing-sro',
       pass: this.env.SRO_FTP_PASS,
       root: this.env.SRO_FTP_ROOT || 'SRO',
-      seriesPriority: (this.env.SRO_SERIES_PRIORITY || 'GTWorldCh,GT4')
-        .split(',').map(v => v.trim()).filter(Boolean),
     };
+    const seriesKeys = this._getSeriesKeys();
 
     if (!ftpConfig.pass) {
       console.warn('[TimingState] SRO_FTP_PASS not set');
       return;
     }
 
-    // Connect once, poll rapidly for BURST_DURATION_MS, then disconnect
     const ftp = await openFtp(ftpConfig);
     const burstEnd = Date.now() + BURST_DURATION_MS;
 
     try {
       while (Date.now() < burstEnd) {
         const t0 = Date.now();
-        const { session, files, newVersions } = await checkFiles(ftp, ftpConfig, this._lastVersions);
-        this._lastVersions = newVersions;
 
-        if (session && session.label !== this.currentSessionLabel) {
-          if (this.currentSessionLabel) {
-            await this._archiveCurrentSession().catch(e => console.error('[archive]', e.message));
-            this.store.reset();
-            this._lastVersions = {};
+        // Discover all active sessions per series on every burst check
+        const activeSessions = await findSessionsPerSeries(ftp, ftpConfig.root, seriesKeys);
+
+        let anyChanged = false;
+        for (const [key, session] of activeSessions) {
+          const s = this._getOrCreateSeries(key);
+
+          // Session changed → archive old, reset
+          if (session.label !== s.sessionLabel) {
+            if (s.sessionLabel) {
+              await this._archiveSeriesSession(key, s).catch(e => console.error('[archive]', e.message));
+              s.store.reset();
+              s.lastVersions = {};
+            }
+            s.sessionLabel = session.label;
           }
-          this.currentSessionLabel = session.label;
+
+          // Poll files for this series
+          const { files, newVersions } = await checkFilesForSession(ftp, session.path, s.lastVersions);
+          s.lastVersions = newVersions;
+
+          let changed = false;
+          for (const { filename, content } of files) {
+            const parsed = parseXml(filename, content);
+            if (!parsed) continue;
+            switch (parsed.type) {
+              case 'entryList':       s.store.applyEntryList(parsed); break;
+              case 'resultList':      s.store.applyResultList(parsed); break;
+              case 'announcements':   s.store.applyAnnouncements(parsed); break;
+              case 'eventListTotal':  s.store.applyEventList({ ...parsed, isTotal: true }); break;
+              case 'eventListUpdate': s.store.applyEventList({ ...parsed, isTotal: false }); break;
+            }
+            changed = true;
+          }
+          if (changed) anyChanged = true;
         }
 
-        let changed = false;
-        for (const { filename, content } of files) {
-          const parsed = parseXml(filename, content);
-          if (!parsed) continue;
-          switch (parsed.type) {
-            case 'entryList':       this.store.applyEntryList(parsed); break;
-            case 'resultList':      this.store.applyResultList(parsed); break;
-            case 'announcements':   this.store.applyAnnouncements(parsed); break;
-            case 'eventListTotal':  this.store.applyEventList({ ...parsed, isTotal: true }); break;
-            case 'eventListUpdate': this.store.applyEventList({ ...parsed, isTotal: false }); break;
-          }
-          changed = true;
-        }
-        if (changed) this._broadcast();
+        if (anyChanged) this._broadcast();
 
-        // Wait for the remainder of CHECK_INTERVAL_MS (minus time already spent)
         const elapsed = Date.now() - t0;
         const wait = Math.max(0, CHECK_INTERVAL_MS - elapsed);
         if (wait > 0) await new Promise(r => setTimeout(r, wait));
@@ -152,8 +178,7 @@ export class TimingState {
   }
 
   async _scheduleAlarm(delayMs) {
-    const next = Date.now() + delayMs;
-    await this.state.storage.setAlarm(next);
+    await this.state.storage.setAlarm(Date.now() + delayMs);
   }
 
   // -----------------------------------------------------------------------
@@ -165,15 +190,11 @@ export class TimingState {
     const [client, server] = Object.values(pair);
 
     this.state.acceptWebSocket(server);
-    this.connections.set(server, { classFilter: null });
+    this.connections.set(server, { classFilter: null, series: this._defaultSeriesKey() });
 
-    // Kick-start polling if not already running
     this._scheduleAlarm(0).catch(() => {});
 
-    const snapshot = this.store.getSnapshot(null);
-    const vm = buildViewModel(snapshot, null);
-    vm.sessionLabel = this.currentSessionLabel;
-    server.send(JSON.stringify({ type: 'update', data: vm }));
+    this._sendUpdate(server);
 
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -187,49 +208,69 @@ export class TimingState {
 
     if (msg.type === 'setClassFilter') {
       conn.classFilter = msg.data || null;
-      const snapshot = this.store.getSnapshot(conn.classFilter);
-      const vm = buildViewModel(snapshot, conn.classFilter);
-      vm.sessionLabel = this.currentSessionLabel;
-      ws.send(JSON.stringify({ type: 'update', data: vm }));
+      this._sendUpdate(ws);
+    }
+
+    if (msg.type === 'setSeries') {
+      conn.series = msg.data || this._defaultSeriesKey();
+      conn.classFilter = null; // reset class filter on series change
+      this._sendUpdate(ws);
     }
 
     if (msg.type === 'getCarDetail') {
-      const car = this.store.cars.get(String(msg.data));
+      const s = this._series.get(conn.series || this._defaultSeriesKey());
+      const car = s?.store.cars.get(String(msg.data));
       if (car) ws.send(JSON.stringify({ type: 'carDetail', data: car }));
     }
   }
 
-  async webSocketClose(ws) {
-    this.connections.delete(ws);
+  async webSocketClose(ws) { this.connections.delete(ws); }
+  async webSocketError(ws) { this.connections.delete(ws); try { ws.close(); } catch (_) {} }
+
+  _sendUpdate(ws) {
+    const conn = this.connections.get(ws) || { classFilter: null, series: this._defaultSeriesKey() };
+    const seriesKey = conn.series || this._defaultSeriesKey();
+    const s = this._series.get(seriesKey);
+    const store = s?.store || new DataStore();
+    const snapshot = store.getSnapshot(conn.classFilter);
+    const vm = buildViewModel(snapshot, conn.classFilter);
+    vm.sessionLabel = s?.sessionLabel || '';
+    vm.series = seriesKey;
+    // Tell client which series are available
+    vm.availableSeries = this._getSeriesKeys().map(k => ({
+      key: k,
+      label: seriesLabel(k),
+      active: this._series.has(k) && !!this._series.get(k).sessionLabel,
+    }));
+    try { ws.send(JSON.stringify({ type: 'update', data: vm })); } catch (_) {}
   }
 
-  async webSocketError(ws) {
-    this.connections.delete(ws);
-    try { ws.close(); } catch (_) {}
+  _broadcast() {
+    for (const ws of this.state.getWebSockets()) {
+      this._sendUpdate(ws);
+    }
   }
 
   // -----------------------------------------------------------------------
-  // Ingest endpoint — fallback for external poller
+  // Ingest endpoint (fallback)
   // -----------------------------------------------------------------------
 
   async _handleIngest(request) {
     const secret = this.env.INGEST_SECRET;
-    if (secret) {
-      const auth = request.headers.get('X-Ingest-Secret');
-      if (auth !== secret) return new Response('Unauthorized', { status: 401 });
+    if (secret && request.headers.get('X-Ingest-Secret') !== secret) {
+      return new Response('Unauthorized', { status: 401 });
     }
-
     let body;
-    try { body = await request.json(); } catch {
-      return new Response('Bad JSON', { status: 400 });
-    }
+    try { body = await request.json(); } catch { return new Response('Bad JSON', { status: 400 }); }
 
-    const { type, sessionLabel, filename, content } = body;
+    const { type, sessionLabel, filename, content, series: seriesKey } = body;
+    const key = seriesKey || this._defaultSeriesKey();
+    const s = this._getOrCreateSeries(key);
 
     if (type === 'sessionChanged' && sessionLabel) {
-      if (sessionLabel !== this.currentSessionLabel) {
-        this.store.reset();
-        this.currentSessionLabel = sessionLabel;
+      if (sessionLabel !== s.sessionLabel) {
+        s.store.reset();
+        s.sessionLabel = sessionLabel;
         this._broadcast();
       }
       return Response.json({ ok: true });
@@ -239,50 +280,32 @@ export class TimingState {
       const parsed = parseXml(filename, content);
       if (parsed) {
         switch (parsed.type) {
-          case 'entryList':       this.store.applyEntryList(parsed); break;
-          case 'resultList':      this.store.applyResultList(parsed); break;
-          case 'announcements':   this.store.applyAnnouncements(parsed); break;
-          case 'eventListTotal':  this.store.applyEventList({ ...parsed, isTotal: true }); break;
-          case 'eventListUpdate': this.store.applyEventList({ ...parsed, isTotal: false }); break;
+          case 'entryList':       s.store.applyEntryList(parsed); break;
+          case 'resultList':      s.store.applyResultList(parsed); break;
+          case 'announcements':   s.store.applyAnnouncements(parsed); break;
+          case 'eventListTotal':  s.store.applyEventList({ ...parsed, isTotal: true }); break;
+          case 'eventListUpdate': s.store.applyEventList({ ...parsed, isTotal: false }); break;
         }
         this._broadcast();
       }
     }
-
     return Response.json({ ok: true });
-  }
-
-  // -----------------------------------------------------------------------
-  // Broadcast to all connected WebSocket clients
-  // -----------------------------------------------------------------------
-
-  _broadcast() {
-    const websockets = this.state.getWebSockets();
-    for (const ws of websockets) {
-      try {
-        const conn = this.connections.get(ws) || { classFilter: null };
-        const snapshot = this.store.getSnapshot(conn.classFilter);
-        const vm = buildViewModel(snapshot, conn.classFilter);
-        vm.sessionLabel = this.currentSessionLabel;
-        ws.send(JSON.stringify({ type: 'update', data: vm }));
-      } catch (_) {}
-    }
   }
 
   // -----------------------------------------------------------------------
   // Session archive (Cloudflare KV)
   // -----------------------------------------------------------------------
 
-  async _archiveCurrentSession() {
-    if (!this.env.SESSION_KV || !this.currentSessionLabel) return;
+  async _archiveSeriesSession(seriesKey, s) {
+    if (!this.env.SESSION_KV || !s.sessionLabel) return;
 
-    const snapshot = this.store.getSnapshot(null);
+    const snapshot = s.store.getSnapshot(null);
     const vm = buildViewModel(snapshot, null);
-    vm.sessionLabel = this.currentSessionLabel;
+    vm.sessionLabel = s.sessionLabel;
+    vm.series = seriesKey;
 
-    // Build carsDetail: full car data with lapHistory and sector times
     const carsDetail = [];
-    for (const [, car] of this.store.cars) {
+    for (const [, car] of s.store.cars) {
       carsDetail.push({
         nr: car.nr,
         drivers: car.drivers || [],
@@ -293,36 +316,33 @@ export class TimingState {
         bestLap: car.bestLap || null,
         _bestLapByDriver: car._bestLapByDriver
           ? Object.fromEntries(car._bestLapByDriver instanceof Map
-              ? car._bestLapByDriver
-              : Object.entries(car._bestLapByDriver))
+              ? car._bestLapByDriver : Object.entries(car._bestLapByDriver))
           : {},
         _bestSectors: car._bestSectors || [],
         _bestSectorsByDriver: car._bestSectorsByDriver
           ? Object.fromEntries(car._bestSectorsByDriver instanceof Map
-              ? car._bestSectorsByDriver
-              : Object.entries(car._bestSectorsByDriver))
+              ? car._bestSectorsByDriver : Object.entries(car._bestSectorsByDriver))
           : {},
       });
     }
 
-    const id = slugify(this.currentSessionLabel) + '-' + Date.now();
+    const id = slugify(`${seriesKey}-${s.sessionLabel}`) + '-' + Date.now();
     const savedAt = new Date().toISOString();
     const carCount = carsDetail.length;
 
-    const payload = JSON.stringify({ id, label: this.currentSessionLabel, savedAt, carCount, vm, carsDetail });
+    await this.env.SESSION_KV.put(
+      `session:${id}`,
+      JSON.stringify({ id, label: s.sessionLabel, series: seriesKey, savedAt, carCount, vm, carsDetail }),
+      { expirationTtl: 60 * 60 * 24 * 90 }
+    );
 
-    // Store full session data
-    await this.env.SESSION_KV.put(`session:${id}`, payload, { expirationTtl: 60 * 60 * 24 * 90 }); // 90 days
-
-    // Update index
     const raw = await this.env.SESSION_KV.get('index');
     const index = raw ? JSON.parse(raw) : [];
-    index.unshift({ id, label: this.currentSessionLabel, savedAt, carCount });
-    // Keep at most 100 sessions in the index
+    index.unshift({ id, label: s.sessionLabel, series: seriesKey, seriesLabel: seriesLabel(seriesKey), savedAt, carCount });
     if (index.length > 100) index.splice(100);
     await this.env.SESSION_KV.put('index', JSON.stringify(index));
 
-    console.log(`[archive] Saved session "${this.currentSessionLabel}" as ${id} (${carCount} cars)`);
+    console.log(`[archive] Saved ${seriesKey} session "${s.sessionLabel}" (${carCount} cars)`);
   }
 
   async _handleListSessions() {
@@ -341,4 +361,10 @@ export class TimingState {
 
 function slugify(label) {
   return label.replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase().slice(0, 60);
+}
+
+function seriesLabel(key) {
+  if (key.includes('GTWorldCh') || key.includes('GTWC')) return 'GTWC';
+  if (key.includes('GT4')) return 'GT4 European';
+  return key;
 }
