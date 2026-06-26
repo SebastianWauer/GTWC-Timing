@@ -135,6 +135,23 @@ export function parseMs(t) {
 
 const FLAG_MAP = { 0: 'GREEN', 1: 'GREEN', 2: 'YELLOW', 3: 'FCY', 4: 'SC', 5: 'RED', 6: 'CHEQUERED' };
 
+// Normalise Swiss Timing class names to the clean display names the dashboard
+// uses. In particular "PAM" / "Pro-AM Cup" → "Pro-Am" (matches the PRO-AM
+// colour + all our Pro-Am class logic). Returns "" for unknown.
+const CLASS_NAME_MAP = {
+  PAM: 'Pro-Am', 'PRO-AM': 'Pro-Am', PROAM: 'Pro-Am',
+  AM: 'AM', SILVER: 'Silver', PRO: 'Pro', GOLD: 'Gold', BRONZE: 'Bronze',
+};
+function normalizeClass(cls) {
+  if (!cls) return '';
+  const short = String(cls.ShortName || '').trim().toUpperCase();
+  if (CLASS_NAME_MAP[short]) return CLASS_NAME_MAP[short];
+  const full = String(cls.Name || '').trim().toUpperCase().replace(/\s*CUP$/, '');
+  if (CLASS_NAME_MAP[full]) return CLASS_NAME_MAP[full];
+  // fallback: original short name (or stripped full name)
+  return cls.ShortName || (cls.Name || '').replace(/\s*Cup$/i, '') || '';
+}
+
 /**
  * Build a snapshot object compatible with buildViewModel().
  * lapHistoryStore: Map<nr, Array<{lap,ms,raw}>> persisted across polls (accumulates history).
@@ -196,7 +213,7 @@ export function buildSnapshot({ timing, detail, sessionName, lapHistoryStore }) 
       nr,
       pos: r.Rank ?? 9999,
       classPos: r.ClassRank ?? null,
-      className: cls.ShortName || cls.Name || '',
+      className: normalizeClass(cls),
       classNameFull: cls.Name || '',
       drivers,
       activeDriverId: comp.CurrentDriverId,
@@ -247,6 +264,6 @@ export function buildSnapshot({ timing, detail, sessionName, lapHistoryStore }) 
 function classListFrom(classes) {
   return Object.values(classes)
     .sort((a, b) => (a.ListIndex || 0) - (b.ListIndex || 0))
-    .map(c => c.ShortName || c.Name)
+    .map(normalizeClass)
     .filter(Boolean);
 }
