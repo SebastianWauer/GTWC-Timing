@@ -56,6 +56,15 @@ export class TimingState {
       return Response.json(car);
     }
 
+    // Session archive
+    if (url.pathname === '/api/sessions' && request.method === 'GET') {
+      return this._handleListSessions();
+    }
+    if (url.pathname.startsWith('/api/sessions/') && request.method === 'GET') {
+      const id = url.pathname.slice('/api/sessions/'.length);
+      return this._handleGetSession(id);
+    }
+
     // Cron ping — triggers/resets the polling alarm
     if (url.pathname === '/_cron') {
       await this._scheduleAlarm(0);
@@ -110,6 +119,7 @@ export class TimingState {
 
         if (session && session.label !== this.currentSessionLabel) {
           if (this.currentSessionLabel) {
+            await this._archiveCurrentSession().catch(e => console.error('[archive]', e.message));
             this.store.reset();
             this._lastVersions = {};
           }
@@ -258,4 +268,77 @@ export class TimingState {
       } catch (_) {}
     }
   }
+
+  // -----------------------------------------------------------------------
+  // Session archive (Cloudflare KV)
+  // -----------------------------------------------------------------------
+
+  async _archiveCurrentSession() {
+    if (!this.env.SESSION_KV || !this.currentSessionLabel) return;
+
+    const snapshot = this.store.getSnapshot(null);
+    const vm = buildViewModel(snapshot, null);
+    vm.sessionLabel = this.currentSessionLabel;
+
+    // Build carsDetail: full car data with lapHistory and sector times
+    const carsDetail = [];
+    for (const [, car] of this.store.cars) {
+      carsDetail.push({
+        nr: car.nr,
+        drivers: car.drivers || [],
+        class: car.class,
+        team: car.team,
+        car: car.car,
+        lapHistory: car.lapHistory || [],
+        bestLap: car.bestLap || null,
+        _bestLapByDriver: car._bestLapByDriver
+          ? Object.fromEntries(car._bestLapByDriver instanceof Map
+              ? car._bestLapByDriver
+              : Object.entries(car._bestLapByDriver))
+          : {},
+        _bestSectors: car._bestSectors || [],
+        _bestSectorsByDriver: car._bestSectorsByDriver
+          ? Object.fromEntries(car._bestSectorsByDriver instanceof Map
+              ? car._bestSectorsByDriver
+              : Object.entries(car._bestSectorsByDriver))
+          : {},
+      });
+    }
+
+    const id = slugify(this.currentSessionLabel) + '-' + Date.now();
+    const savedAt = new Date().toISOString();
+    const carCount = carsDetail.length;
+
+    const payload = JSON.stringify({ id, label: this.currentSessionLabel, savedAt, carCount, vm, carsDetail });
+
+    // Store full session data
+    await this.env.SESSION_KV.put(`session:${id}`, payload, { expirationTtl: 60 * 60 * 24 * 90 }); // 90 days
+
+    // Update index
+    const raw = await this.env.SESSION_KV.get('index');
+    const index = raw ? JSON.parse(raw) : [];
+    index.unshift({ id, label: this.currentSessionLabel, savedAt, carCount });
+    // Keep at most 100 sessions in the index
+    if (index.length > 100) index.splice(100);
+    await this.env.SESSION_KV.put('index', JSON.stringify(index));
+
+    console.log(`[archive] Saved session "${this.currentSessionLabel}" as ${id} (${carCount} cars)`);
+  }
+
+  async _handleListSessions() {
+    if (!this.env.SESSION_KV) return Response.json([]);
+    const raw = await this.env.SESSION_KV.get('index');
+    return Response.json(raw ? JSON.parse(raw) : []);
+  }
+
+  async _handleGetSession(id) {
+    if (!this.env.SESSION_KV) return new Response('Not found', { status: 404 });
+    const raw = await this.env.SESSION_KV.get(`session:${id}`);
+    if (!raw) return new Response('Not found', { status: 404 });
+    return new Response(raw, { headers: { 'Content-Type': 'application/json' } });
+  }
+}
+
+function slugify(label) {
+  return label.replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase().slice(0, 60);
 }

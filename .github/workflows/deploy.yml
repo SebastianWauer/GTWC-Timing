@@ -21,6 +21,32 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Create or get KV namespace for session archive
+        run: |
+          ACCOUNT_ID="26ef6c9066ca3d71dfd4bed75c5450dd"
+          NAMESPACES=$(curl -s \
+            -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
+            "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/storage/kv/namespaces?per_page=100")
+          KV_ID=$(echo "$NAMESPACES" | python3 -c "
+          import json, sys
+          ns = json.load(sys.stdin)
+          for n in ns.get('result', []):
+              if n['title'] == 'GTWC_SESSIONS':
+                  print(n['id'])
+                  break
+          ")
+          if [ -z "$KV_ID" ]; then
+            echo "Creating new KV namespace GTWC_SESSIONS..."
+            RESULT=$(curl -s -X POST \
+              -H "Authorization: Bearer ${{ secrets.CF_API_TOKEN }}" \
+              -H "Content-Type: application/json" \
+              "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/storage/kv/namespaces" \
+              -d '{"title": "GTWC_SESSIONS"}')
+            KV_ID=$(echo "$RESULT" | python3 -c "import json, sys; print(json.load(sys.stdin)['result']['id'])")
+          fi
+          echo "Using KV namespace ID: $KV_ID"
+          sed -i "s/GTWC_KV_ID/$KV_ID/" wrangler.toml
+
       - name: Deploy Worker
         uses: cloudflare/wrangler-action@v3
         with:

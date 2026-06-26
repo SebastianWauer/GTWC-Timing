@@ -16,6 +16,10 @@ class_name = "TimingState"
 tag = "v1"
 new_classes = ["TimingState"]
 
+[[kv_namespaces]]
+binding = "SESSION_KV"
+id = "GTWC_KV_ID"
+
 [vars]
 SRO_FTP_HOST = "xml-motorsport.sportresult.com"
 SRO_FTP_PORT = "21"
