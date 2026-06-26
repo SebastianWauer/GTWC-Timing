@@ -26,3 +26,8 @@ jobs:
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           command: deploy
+
+      - name: Set INGEST_SECRET in Cloudflare
+        run: echo "${{ secrets.INGEST_SECRET }}" | npx wrangler secret put INGEST_SECRET
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
