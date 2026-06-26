@@ -251,7 +251,7 @@ export function buildSnapshot({ timing, detail, sessionName, lapHistoryStore }) 
       bestLapNr: r.BestTime?.LapNumber ?? null,
       sectors,
       laps: r.TotalLapCount ?? 0,
-      pitStops: comp.PitStopCount ?? 0,
+      pitCount: comp.PitStopCount ?? 0,
       inPit: !!comp.InPitLane,
       status: r.Status,
       gap: fmtGap(r.Behind),            // to overall leader
