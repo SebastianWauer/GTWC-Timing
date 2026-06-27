@@ -41,11 +41,10 @@ export class TimingState {
       new WebSocketRequestResponsePair('ping', 'pong')
     );
 
-    // Restore persisted ProSync lap history / best sectors so the per-lap
-    // detail survives Durable Object restarts (and page refreshes).
-    this.state.blockConcurrencyWhile(async () => {
-      try { await this._loadPersisted(); } catch (e) { console.error('[loadPersisted]', e.message); }
-    });
+    // Persisted lap history is restored lazily on the first poll (NOT in the
+    // constructor): loading a large store under blockConcurrencyWhile could
+    // crash the DO on startup and take down every request.
+    this._persistLoaded = false;
   }
 
   // -----------------------------------------------------------------------
@@ -81,7 +80,9 @@ export class TimingState {
     let changed = false;
     for (const [nr, laps] of (s.lapHistoryStore || new Map())) {
       if ((s.persistedCounts.get(nr) || 0) !== laps.length) {
-        writes[`ph:${key}:lh:${nr}`] = laps;
+        // Cap to the most recent 800 laps to stay well under the 128 KB
+        // per-value DO storage limit.
+        writes[`ph:${key}:lh:${nr}`] = laps.length > 800 ? laps.slice(-800) : laps;
         s.persistedCounts.set(nr, laps.length);
         changed = true;
       }
@@ -248,6 +249,12 @@ export class TimingState {
 
   async _runProSyncPoll() {
     const seriesKeys = this._getSeriesKeys();
+
+    // Lazy, fail-safe restore of persisted lap history (once).
+    if (!this._persistLoaded) {
+      this._persistLoaded = true;
+      try { await this._loadPersisted(); } catch (e) { console.error('[loadPersisted]', e.message); }
+    }
 
     // Re-discover the current meeting + live units periodically (cheap to skip)
     if (!this._prosyncDisc || (Date.now() - this._prosyncDiscAt) > PROSYNC_DISCOVER_MS) {
