@@ -239,16 +239,23 @@ export function buildSnapshot({ timing, detail, sessionName, lapHistoryStore, be
     const bestMs = parseMs(r.BestTime?.Time);
     const lastMs = parseMs(r.LastLap?.Time);
 
-    // Accumulate lap history across polls
+    // Accumulate lap history across polls. Entry shape must match what the
+    // car-detail sidebar expects: { lapNr, driverId, driverName, lapTime:{ms,raw},
+    // sectors: { S1:{ms,raw}, ... } }.
     let lapHistory = lapHistoryStore.get(nr) || [];
     const lastLapNr = r.LastLap?.LapNumber;
-    if (lastLapNr && lastMs != null && !lapHistory.some(l => l.lap === lastLapNr)) {
+    if (lastLapNr && lastMs != null && !lapHistory.some(l => l.lapNr === lastLapNr)) {
+      const lapSectors = {};
+      (r.LastLap?.Intermediates || []).forEach((iv, i) => {
+        const key = interDefs[i] || `S${i + 1}`;
+        lapSectors[key] = { raw: iv.Time, ms: parseMs(iv.Time), speed: iv.Speed };
+      });
       lapHistory = [...lapHistory, {
-        lap: lastLapNr,
-        ms: lastMs,
-        raw: r.LastLap.Time,
-        sectors: inters.map(iv => ({ raw: iv.Time, ms: parseMs(iv.Time) })),
+        lapNr: lastLapNr,
         driverId: comp.CurrentDriverId,
+        driverName: activeDriverName,
+        lapTime: { ms: lastMs, raw: r.LastLap.Time },
+        sectors: lapSectors,
       }];
       lapHistoryStore.set(nr, lapHistory);
     }
