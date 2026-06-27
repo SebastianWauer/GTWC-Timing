@@ -120,6 +120,16 @@ export class TimingState {
   }
 
   async fetch(request) {
+    try {
+      return await this._fetch(request);
+    } catch (err) {
+      return new Response(JSON.stringify({ error: err.message, stack: err.stack }), {
+        status: 500, headers: { 'Content-Type': 'application/json' },
+      });
+    }
+  }
+
+  async _fetch(request) {
     const url = new URL(request.url);
 
     if (request.headers.get('Upgrade') === 'websocket') {
