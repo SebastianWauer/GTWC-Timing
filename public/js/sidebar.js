@@ -134,19 +134,25 @@ function renderSidebar(container, vm, selectedNr) {
 
   container.innerHTML = html;
 
-  for (const btn of container.querySelectorAll('.mfr-sort-btn')) {
-    btn.addEventListener('click', () => {
-      _manufacturerSort = btn.dataset.sort;
-      if (_lastSidebarArgs) renderSidebar(..._lastSidebarArgs);
-    });
-  }
-
-  for (const el of container.querySelectorAll('.mfr-toggle')) {
-    el.addEventListener('click', () => {
-      const make = el.dataset.make;
-      if (_mfrExpanded.has(make)) _mfrExpanded.delete(make);
-      else _mfrExpanded.add(make);
-      if (_lastSidebarArgs) renderSidebar(..._lastSidebarArgs);
+  // Use one delegated click handler on the (persistent) container instead of
+  // re-attaching per element on every render. The sidebar re-renders every
+  // ~2s in live mode, which made per-render listeners unreliable to click.
+  if (!container._sidebarDelegated) {
+    container._sidebarDelegated = true;
+    container.addEventListener('click', (e) => {
+      const sortBtn = e.target.closest('.mfr-sort-btn');
+      if (sortBtn) {
+        _manufacturerSort = sortBtn.dataset.sort;
+        if (_lastSidebarArgs) renderSidebar(..._lastSidebarArgs);
+        return;
+      }
+      const toggle = e.target.closest('.mfr-toggle');
+      if (toggle) {
+        const make = toggle.dataset.make;
+        if (_mfrExpanded.has(make)) _mfrExpanded.delete(make);
+        else _mfrExpanded.add(make);
+        if (_lastSidebarArgs) renderSidebar(..._lastSidebarArgs);
+      }
     });
   }
 }
