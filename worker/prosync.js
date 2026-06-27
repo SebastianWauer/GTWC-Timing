@@ -195,7 +195,8 @@ function normalizeClass(cls) {
  * Build a snapshot object compatible with buildViewModel().
  * lapHistoryStore: Map<nr, Array<{lap,ms,raw}>> persisted across polls (accumulates history).
  */
-export function buildSnapshot({ timing, detail, sessionName, lapHistoryStore }) {
+export function buildSnapshot({ timing, detail, sessionName, lapHistoryStore, bestSectorStore }) {
+  bestSectorStore = bestSectorStore || new Map();
   const competitors = detail?.Competitors || {};
   const classes = detail?.Classes || {};
   const interDefs = (detail?.IntermediateDefinitions || []).map(d => d.Name);
@@ -252,6 +253,24 @@ export function buildSnapshot({ timing, detail, sessionName, lapHistoryStore }) 
       lapHistoryStore.set(nr, lapHistory);
     }
 
+    // Accumulate each car's best individual sector across polls (from this
+    // lap's + best lap's intermediates). Drives the Best Sectors / theoretical-
+    // best panels.
+    const bestSectors = bestSectorStore.get(nr) || {};
+    const considerSectors = (list, driverId) => {
+      (list || []).forEach((iv, i) => {
+        const key = interDefs[i] || `S${i + 1}`;
+        const ms = parseMs(iv.Time);
+        if (ms == null) return;
+        if (!bestSectors[key] || ms < bestSectors[key].ms) {
+          bestSectors[key] = { ms, raw: iv.Time, driverId };
+        }
+      });
+    };
+    considerSectors(r.LastLap?.Intermediates, comp.CurrentDriverId);
+    considerSectors(r.BestTime?.Intermediates, comp.CurrentDriverId);
+    bestSectorStore.set(nr, bestSectors);
+
     cars.push({
       nr,
       pos: r.Rank ?? 9999,
@@ -280,6 +299,7 @@ export function buildSnapshot({ timing, detail, sessionName, lapHistoryStore }) 
       classInterval: fmtGap(r.ClassDiff), // to car ahead in class
       totalTime: r.TotalTime || null,
       lapHistory,
+      _bestSectors: bestSectors,
       _bestLapByDriver: {},
     });
   }
@@ -299,16 +319,46 @@ export function buildSnapshot({ timing, detail, sessionName, lapHistoryStore }) 
     .map(m => ({ dt: m.Time, text: m.Text, type: m.Type }))
     .reverse();
 
+  // Session best sectors across all cars: { S1: { ms, carNr, driverId } }
+  const sessionBest = {};
+  for (const car of cars) {
+    for (const [key, sec] of Object.entries(car._bestSectors)) {
+      if (sec?.ms == null) continue;
+      if (!sessionBest[key] || sec.ms < sessionBest[key].ms) {
+        sessionBest[key] = { ms: sec.ms, carNr: car.nr, driverId: sec.driverId };
+      }
+    }
+  }
+  // Theoretical best = sum of best sectors
+  let theoreticalBest = null;
+  const sbKeys = Object.keys(sessionBest).sort();
+  if (sbKeys.length && sbKeys.every(k => sessionBest[k]?.ms != null)) {
+    theoreticalBest = { ms: sbKeys.reduce((t, k) => t + sessionBest[k].ms, 0), sectors: sessionBest };
+  }
+
+  // Manufacturers: { make: { count, bestPos, bestNr } }
+  const manufacturers = {};
+  for (const car of cars) {
+    const make = car.manufacturer || 'Unknown';
+    if (!manufacturers[make]) manufacturers[make] = { count: 0, bestPos: Infinity, bestNr: '' };
+    manufacturers[make].count += 1;
+    if (car.pos > 0 && car.pos < manufacturers[make].bestPos) {
+      manufacturers[make].bestPos = car.pos;
+      manufacturers[make].bestNr = car.nr;
+    }
+  }
+  for (const v of Object.values(manufacturers)) if (v.bestPos === Infinity) v.bestPos = null;
+
   return {
     cars,
     allCars: cars,
     session,
     announcements,
     classes: classListFrom(classes),
-    manufacturers: {},
-    bestSectors: {},
-    sessionBestSectors: {},
-    theoreticalBest: {},
+    manufacturers,
+    bestSectors: sessionBest,
+    sessionBestSectors: sessionBest,
+    theoreticalBest,
     outLapCars: new Set(),
     neutralizationPhases: [],
   };

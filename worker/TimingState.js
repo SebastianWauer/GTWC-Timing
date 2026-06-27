@@ -203,6 +203,7 @@ export class TimingState {
       if (!u) continue;
       const s = this._getOrCreateSeries(key);
       if (!s.lapHistoryStore) s.lapHistoryStore = new Map();
+      if (!s.bestSectorStore) s.bestSectorStore = new Map();
 
       const label = [disc.meetingName, u.competitionName, u.unitName].filter(Boolean).join(' › ');
       if (label !== s.sessionLabel) {
@@ -211,11 +212,12 @@ export class TimingState {
         }
         s.sessionLabel = label;
         s.lapHistoryStore = new Map();
+        s.bestSectorStore = new Map();
       }
 
       const { timing, detail } = await fetchUnit(disc.season, u.unitId);
       if (!timing || !detail) continue;
-      s.snapshot = buildSnapshot({ timing, detail, sessionName: label, lapHistoryStore: s.lapHistoryStore });
+      s.snapshot = buildSnapshot({ timing, detail, sessionName: label, lapHistoryStore: s.lapHistoryStore, bestSectorStore: s.bestSectorStore });
       changed = true;
     }
 
