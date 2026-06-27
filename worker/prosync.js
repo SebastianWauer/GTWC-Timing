@@ -278,6 +278,25 @@ export function buildSnapshot({ timing, detail, sessionName, lapHistoryStore, be
     considerSectors(r.BestTime?.Intermediates, comp.CurrentDriverId);
     bestSectorStore.set(nr, bestSectors);
 
+    // Per-driver best lap + best sectors (for the YELLOW = driver personal best
+    // colour). Derived from the accumulated lap history.
+    const bestLapByDriver = {};
+    const bestSectorsByDriver = {};
+    for (const lap of lapHistory) {
+      const did = lap.driverId;
+      if (!did) continue;
+      if (lap.lapTime?.ms != null && (!bestLapByDriver[did] || lap.lapTime.ms < bestLapByDriver[did].ms)) {
+        bestLapByDriver[did] = { ms: lap.lapTime.ms, raw: lap.lapTime.raw, lapNr: lap.lapNr };
+      }
+      for (const [k, sec] of Object.entries(lap.sectors || {})) {
+        if (sec?.ms == null) continue;
+        if (!bestSectorsByDriver[did]) bestSectorsByDriver[did] = {};
+        if (!bestSectorsByDriver[did][k] || sec.ms < bestSectorsByDriver[did][k].ms) {
+          bestSectorsByDriver[did][k] = { ms: sec.ms, raw: sec.raw };
+        }
+      }
+    }
+
     cars.push({
       nr,
       pos: r.Rank ?? 9999,
@@ -307,7 +326,8 @@ export function buildSnapshot({ timing, detail, sessionName, lapHistoryStore, be
       totalTime: r.TotalTime || null,
       lapHistory,
       _bestSectors: bestSectors,
-      _bestLapByDriver: {},
+      _bestLapByDriver: bestLapByDriver,
+      _bestSectorsByDriver: bestSectorsByDriver,
     });
   }
 
