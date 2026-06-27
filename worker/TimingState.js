@@ -259,7 +259,13 @@ export class TimingState {
       this._lastDiag = { time: new Date().toISOString(), error: err.message, stack: err.stack };
     } finally {
       this._polling = false;
-      await this._scheduleAlarm(mode === 'prosync' ? PROSYNC_INTERVAL_MS : BURST_GAP_MS);
+      // Only keep polling while at least one client is watching. This keeps
+      // Durable Object request volume within the free-tier limit when nobody
+      // is connected (polling resumes on the next WebSocket connection).
+      const hasViewers = this.state.getWebSockets().length > 0;
+      if (mode !== 'prosync' || hasViewers) {
+        await this._scheduleAlarm(mode === 'prosync' ? PROSYNC_INTERVAL_MS : BURST_GAP_MS);
+      }
     }
   }
 
@@ -307,7 +313,6 @@ export class TimingState {
       const { timing, detail } = await fetchUnit(disc.season, u.unitId);
       if (!timing || !detail) continue;
       s.snapshot = buildSnapshot({ timing, detail, sessionName: label, lapHistoryStore: s.lapHistoryStore, bestSectorStore: s.bestSectorStore });
-      await this._persistSeries(key, s).catch(e => console.error('[persist]', e.message));
       changed = true;
     }
 
@@ -317,6 +322,16 @@ export class TimingState {
       detected: Object.entries(disc.perSeries).map(([k, v]) => ({ key: k, unit: v.unitName, comp: v.competitionName })),
     };
     if (changed) this._broadcast();
+
+    // Persist lap history at most every ~30s (not every poll) to keep DO
+    // storage-operation volume low.
+    if (Date.now() - (this._lastPersistAt || 0) > 30_000) {
+      this._lastPersistAt = Date.now();
+      for (const key of seriesKeys) {
+        const s = this._series.get(key);
+        if (s) await this._persistSeries(key, s).catch(e => console.error('[persist]', e.message));
+      }
+    }
   }
 
   async _runBurst() {
