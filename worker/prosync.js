@@ -59,14 +59,22 @@ export async function discover(seriesKeys) {
   for (const key of seriesKeys) {
     const comp = findCompetitionForSeries(competitions, key);
     if (!comp) continue;
-    const unit = pickUnitForCompetition(units, comp.Id);
-    if (!unit) continue;
+    const liveUnit = pickUnitForCompetition(units, comp.Id);
+    if (!liveUnit) continue;
+
+    // Full session list for this series' competition (for the session picker)
+    const sessions = Object.values(units)
+      .filter(u => u.CompetitionId === comp.Id)
+      .sort((a, b) => (a.ListIndex || 0) - (b.ListIndex || 0))
+      .map(u => ({ unitId: u.Id, name: u.Name, code: u.Code, state: u.State, type: u.Type }));
+
     perSeries[key] = {
-      unitId: unit.Id,
-      unitName: unit.Name,
-      unitCode: unit.Code,
-      unitState: unit.State,
+      unitId: liveUnit.Id,
+      unitName: liveUnit.Name,
+      unitCode: liveUnit.Code,
+      unitState: liveUnit.State,
       competitionName: comp.Name,
+      sessions,
     };
   }
 

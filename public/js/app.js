@@ -42,6 +42,14 @@ document.addEventListener('DOMContentLoaded', () => {
     for (const b of document.querySelectorAll('.series-btn')) b.classList.toggle('active', b.dataset.series === key);
     socketSend({ type: 'setSeries', data: key });
   });
+
+  // Session selector
+  document.getElementById('session-select')?.addEventListener('change', (e) => {
+    socketSend({ type: 'setSession', data: { unitId: e.target.value } });
+  });
+  document.getElementById('session-live-btn')?.addEventListener('click', () => {
+    socketSend({ type: 'setSession', data: null });
+  });
   elFullscreenBtn = document.getElementById('fullscreen-btn');
   elTimingChartHost = document.getElementById('timing-chart-host');
   elTimingPaneRight = document.getElementById('timing-pane-right');
@@ -147,6 +155,7 @@ function connectSocket() {
     if (msg.type === 'update') {
       _vm = msg.data;
       updateSeriesBar(_vm.availableSeries);
+      updateSessionBar(_vm);
       applyUpdate(_vm);
     }
 
@@ -226,6 +235,34 @@ function updateSeriesBar(availableSeries) {
     // Dim series buttons that have no live data yet
     btn.style.opacity = s.active ? '1' : '0.45';
     btn.title = s.active ? s.label : `${s.label} (no active session)`;
+  }
+}
+
+function updateSessionBar(vm) {
+  const sel = document.getElementById('session-select');
+  const liveBtn = document.getElementById('session-live-btn');
+  if (!sel) return;
+  const sessions = vm.availableSessions || [];
+
+  // Rebuild options only if the set of sessions changed (avoid clobbering focus)
+  const sig = sessions.map(s => s.unitId).join(',') + '|' + (vm.currentUnitId || '');
+  if (sel._sig !== sig) {
+    sel._sig = sig;
+    sel.innerHTML = '';
+    for (const s of sessions) {
+      const opt = document.createElement('option');
+      opt.value = s.unitId;
+      const liveMark = s.unitId === vm.liveUnitId ? ' ● live' : '';
+      opt.textContent = `${s.name}${liveMark}`;
+      if (s.unitId === vm.currentUnitId) opt.selected = true;
+      sel.appendChild(opt);
+    }
+  }
+  sel.style.display = sessions.length ? '' : 'none';
+  if (liveBtn) {
+    // Show the LIVE button only when viewing a non-live (pinned) session
+    const showLive = !vm.isLive && vm.liveUnitId;
+    liveBtn.style.display = showLive ? '' : 'none';
   }
 }
 

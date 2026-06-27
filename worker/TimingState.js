@@ -346,7 +346,31 @@ export class TimingState {
     if (msg.type === 'setSeries') {
       conn.series = msg.data || this._defaultSeriesKey();
       conn.classFilter = null; // reset class filter on series change
+      conn.pinned = null;      // back to live for the new series
       this._sendUpdate(ws);
+    }
+
+    if (msg.type === 'setSession') {
+      // msg.data = { unitId } | null/'live' → resume live
+      const seriesKey = conn.series || this._defaultSeriesKey();
+      const disc = this._prosyncDisc;
+      const ps = disc?.perSeries?.[seriesKey];
+      const unitId = msg.data && msg.data.unitId;
+      if (!unitId || !ps || unitId === ps.unitId) {
+        conn.pinned = null; // live
+        this._sendUpdate(ws);
+      } else {
+        try {
+          const { timing, detail } = await fetchUnit(disc.season, unitId);
+          if (timing && detail) {
+            const sess = ps.sessions.find(x => x.unitId === unitId);
+            const label = [disc.meetingName, ps.competitionName, sess?.name].filter(Boolean).join(' › ');
+            const snapshot = buildSnapshot({ timing, detail, sessionName: label, lapHistoryStore: new Map() });
+            conn.pinned = { series: seriesKey, unitId, label, snapshot };
+          }
+        } catch (e) { console.error('[setSession]', e.message); }
+        this._sendUpdate(ws);
+      }
     }
 
     if (msg.type === 'getCarDetail') {
@@ -366,22 +390,37 @@ export class TimingState {
     const conn = this.connections.get(ws) || { classFilter: null, series: this._defaultSeriesKey() };
     const seriesKey = conn.series || this._defaultSeriesKey();
     const s = this._series.get(seriesKey);
+
+    // A pinned (manually selected) session overrides the live one for this client.
+    const pinned = conn.pinned && conn.pinned.series === seriesKey ? conn.pinned : null;
+
     // ProSync mode keeps a prebuilt snapshot; FTP/poller modes use the DataStore.
-    const snapshot = s?.snapshot || (s?.store || new DataStore()).getSnapshot(conn.classFilter);
+    const snapshot = pinned?.snapshot || s?.snapshot || (s?.store || new DataStore()).getSnapshot(conn.classFilter);
     const vm = buildViewModel(snapshot, conn.classFilter);
-    vm.sessionLabel = s?.sessionLabel || '';
+    vm.sessionLabel = pinned?.label || s?.sessionLabel || '';
     vm.series = seriesKey;
-    // Tell client which series are available
     vm.availableSeries = this._getSeriesKeys().map(k => ({
       key: k,
       label: seriesLabel(k),
       active: this._series.has(k) && !!this._series.get(k).sessionLabel,
     }));
+
+    // Session picker: list of sessions for this series + which one is shown
+    const disc = this._prosyncDisc;
+    const ps = disc?.perSeries?.[seriesKey];
+    vm.availableSessions = ps?.sessions || [];
+    vm.liveUnitId = ps?.unitId || null;
+    vm.currentUnitId = pinned?.unitId || ps?.unitId || null;
+    vm.isLive = !pinned;
+
     try { ws.send(JSON.stringify({ type: 'update', data: vm })); } catch (_) {}
   }
 
   _broadcast() {
     for (const ws of this.state.getWebSockets()) {
+      const conn = this.connections.get(ws);
+      // Skip clients viewing a pinned (static, non-live) past session.
+      if (conn?.pinned && conn.pinned.series === (conn.series || this._defaultSeriesKey())) continue;
       this._sendUpdate(ws);
     }
   }
