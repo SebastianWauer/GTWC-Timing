@@ -23,6 +23,11 @@ export class TimingState {
   constructor(state, env) {
     this.state = state;
     this.env = env;
+    this._ctorError = null;
+    try { this._init(env); } catch (e) { this._ctorError = `${e.message} | ${e.stack}`; }
+  }
+
+  _init(env) {
     this._polling = false;
     this._probing = false;
     this._lastDiag = null;
@@ -120,6 +125,11 @@ export class TimingState {
   }
 
   async fetch(request) {
+    if (this._ctorError) {
+      return new Response(JSON.stringify({ ctorError: this._ctorError }), {
+        status: 500, headers: { 'Content-Type': 'application/json' },
+      });
+    }
     try {
       return await this._fetch(request);
     } catch (err) {
