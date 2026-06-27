@@ -40,6 +40,66 @@ export class TimingState {
     this.state.setWebSocketAutoResponse(
       new WebSocketRequestResponsePair('ping', 'pong')
     );
+
+    // Restore persisted ProSync lap history / best sectors so the per-lap
+    // detail survives Durable Object restarts (and page refreshes).
+    this.state.blockConcurrencyWhile(async () => {
+      try { await this._loadPersisted(); } catch (e) { console.error('[loadPersisted]', e.message); }
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // Persistence of ProSync lap history (DO storage)
+  //   ph:<series>:label        → current session label
+  //   ph:<series>:bs           → best-sector store {nr: {S1:{...}}}
+  //   ph:<series>:lh:<nr>      → that car's lap history array
+  // -----------------------------------------------------------------------
+
+  async _loadPersisted() {
+    const all = await this.state.storage.list({ prefix: 'ph:' });
+    for (const [k, v] of all) {
+      const parts = k.split(':'); // ph, series, type, [nr]
+      const series = parts[1], type = parts[2];
+      if (!series) continue;
+      const s = this._getOrCreateSeries(series);
+      if (!s.lapHistoryStore) s.lapHistoryStore = new Map();
+      if (!s.bestSectorStore) s.bestSectorStore = new Map();
+      if (!s.persistedCounts) s.persistedCounts = new Map();
+      if (type === 'label') s.sessionLabel = v;
+      else if (type === 'bs') s.bestSectorStore = new Map(Object.entries(v || {}));
+      else if (type === 'lh') {
+        const nr = parts.slice(3).join(':');
+        s.lapHistoryStore.set(nr, v);
+        s.persistedCounts.set(nr, (v || []).length);
+      }
+    }
+  }
+
+  async _persistSeries(key, s) {
+    if (!s.persistedCounts) s.persistedCounts = new Map();
+    const writes = {};
+    let changed = false;
+    for (const [nr, laps] of (s.lapHistoryStore || new Map())) {
+      if ((s.persistedCounts.get(nr) || 0) !== laps.length) {
+        writes[`ph:${key}:lh:${nr}`] = laps;
+        s.persistedCounts.set(nr, laps.length);
+        changed = true;
+      }
+    }
+    if (!changed) return; // only write when a lap was actually added
+    writes[`ph:${key}:label`] = s.sessionLabel || '';
+    writes[`ph:${key}:bs`] = Object.fromEntries(s.bestSectorStore || new Map());
+    const keys = Object.keys(writes);
+    for (let i = 0; i < keys.length; i += 120) {
+      const chunk = {};
+      for (const k of keys.slice(i, i + 120)) chunk[k] = writes[k];
+      await this.state.storage.put(chunk);
+    }
+  }
+
+  async _clearPersistedSeries(key) {
+    const old = await this.state.storage.list({ prefix: `ph:${key}:` });
+    if (old.size) await this.state.storage.delete([...old.keys()]);
   }
 
   _getSeriesKeys() {
@@ -213,11 +273,14 @@ export class TimingState {
         s.sessionLabel = label;
         s.lapHistoryStore = new Map();
         s.bestSectorStore = new Map();
+        s.persistedCounts = new Map();
+        await this._clearPersistedSeries(key).catch(e => console.error('[clearPersist]', e.message));
       }
 
       const { timing, detail } = await fetchUnit(disc.season, u.unitId);
       if (!timing || !detail) continue;
       s.snapshot = buildSnapshot({ timing, detail, sessionName: label, lapHistoryStore: s.lapHistoryStore, bestSectorStore: s.bestSectorStore });
+      await this._persistSeries(key, s).catch(e => console.error('[persist]', e.message));
       changed = true;
     }
 
