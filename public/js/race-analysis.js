@@ -1,0 +1,23 @@
+(()=>{'use strict';
+const canvas=document.getElementById('ra-canvas'), status=document.getElementById('ra-status'), legend=document.getElementById('ra-legend');
+if(!canvas)return;
+let mode='position', selected=new Set(), manual=false, samples=[], series='GTWorldCh', lastSession='';
+const colors=['#38bdf8','#fb7185','#4ade80','#fbbf24','#c084fc','#f472b6','#2dd4bf','#fb923c','#a3e635','#93c5fd'];
+const palette=n=>{let h=0;for(const c of n)h=(h*33+c.charCodeAt(0))>>>0;return colors[h%colors.length]};
+const num=v=>typeof v==='number'&&Number.isFinite(v)?v:null;
+function visibleCars(){const last=samples.at(-1)?.cars||[];return last.filter(c=>selected.has(c.nr));}
+function renderLegend(){const latest=samples.at(-1)?.cars||[];legend.replaceChildren();for(const c of latest){const label=document.createElement('label');label.className='ra-car';const cb=document.createElement('input');cb.type='checkbox';cb.checked=selected.has(c.nr);cb.addEventListener('change',()=>{manual=true;cb.checked?selected.add(c.nr):selected.delete(c.nr);draw()});const dot=document.createElement('span');dot.style.background=palette(c.nr);label.append(cb,dot,document.createTextNode('#'+c.nr));legend.append(label);}}
+function draw(){if(!samples.length){canvas.hidden=true;status.textContent='Noch keine aufgezeichneten Rennstände für diese Session.';return;}canvas.hidden=false;const width=Math.max(560,canvas.parentElement.clientWidth-32),height=320,scale=window.devicePixelRatio||1;canvas.style.width=width+'px';canvas.style.height=height+'px';canvas.width=Math.round(width*scale);canvas.height=Math.round(height*scale);const ctx=canvas.getContext('2d');ctx.scale(scale,scale);ctx.clearRect(0,0,width,height);
+const x0=52,x1=width-18,y0=18,y1=height-39;const active=visibleCars();const vals=active.flatMap(c=>samples.map(s=>{const v=s.cars.find(x=>x.nr===c.nr);return num(mode==='position'?v?.pos:v?.gap)})).filter(v=>v!==null);
+const min=mode==='position'?1:0,max=mode==='position'?Math.max(5,Math.ceil(Math.max(...vals,5))):Math.max(10,Math.ceil(Math.max(...vals,10)/5)*5);
+const t0=samples[0].t,t1=samples.at(-1).t;const x=t=>x0+(t-t0)/Math.max(1,t1-t0)*(x1-x0),y=v=>y0+(v-min)/Math.max(1,max-min)*(y1-y0);
+ctx.font='11px system-ui';ctx.textAlign='right';ctx.fillStyle='#a6b2c5';ctx.strokeStyle='rgba(160,180,205,.18)';for(let k=0;k<=5;k++){const v=min+(max-min)*k/5,py=y(v);ctx.beginPath();ctx.moveTo(x0,py);ctx.lineTo(x1,py);ctx.stroke();ctx.fillText(mode==='position'?'P'+Math.round(v):v.toFixed(1)+'s',x0-7,py+4);}
+ctx.textAlign='center';for(let i=0;i<=5;i++){const t=t0+(t1-t0)*i/5;ctx.fillText(new Date(t).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),x(t),height-13);}
+for(const c of active){ctx.beginPath();ctx.strokeStyle=palette(c.nr);ctx.lineWidth=2;let started=false;for(const s of samples){const car=s.cars.find(v=>v.nr===c.nr),v=num(mode==='position'?car?.pos:car?.gap);if(v===null){started=false;continue;}if(!started)ctx.moveTo(x(s.t),y(v));else ctx.lineTo(x(s.t),y(v));started=true;}ctx.stroke();}
+status.textContent=samples.length+' Messpunkte · '+active.length+' Autos · '+(lastSession||series)+' · letzter Stand: '+new Date(t1).toLocaleTimeString('de-DE');}
+async function load(){const active=document.querySelector('.series-btn.active')?.dataset.series||'GTWorldCh';if(series!==active){series=active;manual=false;selected.clear();samples=[];}try{const response=await fetch('/api/race-history?series='+encodeURIComponent(series),{cache:'no-store'});if(!response.ok)throw Error('HTTP '+response.status);const data=await response.json();if(lastSession&&lastSession!==data.session){manual=false;selected.clear();}lastSession=data.session||'';samples=(data.samples||[]).filter(s=>Array.isArray(s.cars));const cars=samples.at(-1)?.cars||[];if(!manual){selected=new Set(cars.filter(c=>c.pos>0&&c.pos<=10).map(c=>c.nr));}renderLegend();draw();}catch(e){status.textContent='Historie derzeit nicht erreichbar: '+e.message;}}
+document.getElementById('ra-position').onclick=()=>{mode='position';document.getElementById('ra-position').classList.add('ra-active');document.getElementById('ra-gap').classList.remove('ra-active');draw()};
+document.getElementById('ra-gap').onclick=()=>{mode='gap';document.getElementById('ra-gap').classList.add('ra-active');document.getElementById('ra-position').classList.remove('ra-active');draw()};
+document.getElementById('ra-all').onclick=()=>{manual=true;selected=new Set((samples.at(-1)?.cars||[]).map(c=>c.nr));renderLegend();draw()};
+window.addEventListener('resize',draw);setInterval(load,10000);load();
+})();
