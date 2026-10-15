@@ -150,6 +150,8 @@ export class TimingState {
       return this._handleIngest(request);
     }
 
+    if (url.pathname === '/api/race-history') return this._raceHistoryResponse(url.searchParams.get('series') || this._defaultSeriesKey());
+
     if (url.pathname === '/api/snapshot') {
       const seriesKey = url.searchParams.get('series') || this._defaultSeriesKey();
       const classFilter = url.searchParams.get('class') || null;
@@ -313,6 +315,7 @@ export class TimingState {
       const { timing, detail } = await fetchUnit(disc.season, u.unitId);
       if (!timing || !detail) continue;
       s.snapshot = buildSnapshot({ timing, detail, sessionName: label, lapHistoryStore: s.lapHistoryStore, bestSectorStore: s.bestSectorStore });
+      await this._captureRaceHistory(key, s);
       changed = true;
     }
 
@@ -332,6 +335,54 @@ export class TimingState {
         if (s) await this._persistSeries(key, s).catch(e => console.error('[persist]', e.message));
       }
     }
+  }
+
+
+// Store sampled official ranking/gap values. Never infer gaps from lap times.
+// 10-second sampling reduces DO storage writes while retaining race history.
+  async _captureRaceHistory(key, s) {
+    if (!s.snapshot?.cars?.length) return;
+    const now = Date.now();
+    if (now - (s.lastHistoryAt || 0) < 10000) return;
+    s.lastHistoryAt = now;
+    const label = s.sessionLabel || '';
+    if (s.historyLabel !== label) {
+      s.historyLabel = label;
+      s.raceHistory = [];
+    }
+    const cars = s.snapshot.cars.map(c => {
+      const raw = String(c.gap ?? '').trim();
+      const gap = !raw || raw === '-' ? (c.pos === 1 ? 0 : null)
+        : /lap/i.test(raw) ? null
+        : /^\\+?(?:\\d+:)?\\d+(?:\\.\\d+)?$/.test(raw)
+          ? raw.replace(/^\\+/, '').split(':').reduce((v, part) => v * 60 + Number(part), 0)
+          : null;
+      return { nr: c.nr, pos: Number(c.pos) || null,
+        classPos: Number(c.classPos) || null, className: c.className || '',
+        laps: Number(c.laps) || 0, gap, gapRaw: raw,
+        classGapRaw: c.classGap || '', inPit: !!c.inPit };
+    });
+    s.raceHistory.push({ t: now, cars });
+    // Maximum 720 samples = 2 hours at ten-second resolution in DO storage.
+    if (s.raceHistory.length > 720) s.raceHistory.shift();
+    // Persist in per-sample keys to avoid the 128KB single-value limit.
+    await this.state.storage.put('rh:' + key + ':label', label);
+    await this.state.storage.put('rh:' + key + ':' + now, { t: now, cars });
+    const keys = await this.state.storage.list({ prefix: 'rh:' + key + ':', limit: 800 });
+    const sampleKeys = [...keys.keys()].filter(k => k !== 'rh:' + key + ':label');
+    if (sampleKeys.length > 720) await this.state.storage.delete(sampleKeys.slice(0, sampleKeys.length - 720));
+  }
+
+  async _raceHistoryResponse(key) {
+    const s = this._series.get(key);
+    const label = s?.sessionLabel || await this.state.storage.get('rh:' + key + ':label') || '';
+    const values = await this.state.storage.list({ prefix: 'rh:' + key + ':', limit: 800 });
+    const samples = [...values.entries()].filter(([k]) => k !== 'rh:' + key + ':label')
+      .map(([, v]) => v).filter(v => v && Array.isArray(v.cars))
+      .sort((a, b) => a.t - b.t);
+    // Do not show snapshots from a previous session when the label has changed.
+    return Response.json({ series: key, session: label, samples: (s?.historyLabel && s.historyLabel !== label) ? [] : samples },
+      { headers: { 'Cache-Control': 'no-store' } });
   }
 
   async _runBurst() {
