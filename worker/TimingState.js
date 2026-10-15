@@ -354,8 +354,8 @@ export class TimingState {
       const raw = String(c.gap ?? '').trim();
       const gap = !raw || raw === '-' ? (c.pos === 1 ? 0 : null)
         : /lap/i.test(raw) ? null
-        : /^\\+?(?:\\d+:)?\\d+(?:\\.\\d+)?$/.test(raw)
-          ? raw.replace(/^\\+/, '').split(':').reduce((v, part) => v * 60 + Number(part), 0)
+        : /^\+?(?:\d+:)?\d+(?:\\.\d+)?$/.test(raw)
+          ? raw.replace(/^\+/, '').split(':').reduce((v, part) => v * 60 + Number(part), 0)
           : null;
       return { nr: c.nr, pos: Number(c.pos) || null,
         classPos: Number(c.classPos) || null, className: c.className || '',
@@ -367,7 +367,7 @@ export class TimingState {
     if (s.raceHistory.length > 720) s.raceHistory.shift();
     // Persist in per-sample keys to avoid the 128KB single-value limit.
     await this.state.storage.put('rh:' + key + ':label', label);
-    await this.state.storage.put('rh:' + key + ':' + now, { t: now, cars });
+    await this.state.storage.put('rh:' + key + ':' + now, { t: now, label, cars });
     const keys = await this.state.storage.list({ prefix: 'rh:' + key + ':', limit: 800 });
     const sampleKeys = [...keys.keys()].filter(k => k !== 'rh:' + key + ':label');
     if (sampleKeys.length > 720) await this.state.storage.delete(sampleKeys.slice(0, sampleKeys.length - 720));
@@ -378,10 +378,10 @@ export class TimingState {
     const label = s?.sessionLabel || await this.state.storage.get('rh:' + key + ':label') || '';
     const values = await this.state.storage.list({ prefix: 'rh:' + key + ':', limit: 800 });
     const samples = [...values.entries()].filter(([k]) => k !== 'rh:' + key + ':label')
-      .map(([, v]) => v).filter(v => v && Array.isArray(v.cars))
+      .map(([, v]) => v).filter(v => v && v.label === label && Array.isArray(v.cars))
       .sort((a, b) => a.t - b.t);
     // Do not show snapshots from a previous session when the label has changed.
-    return Response.json({ series: key, session: label, samples: (s?.historyLabel && s.historyLabel !== label) ? [] : samples },
+    return Response.json({ series: key, session: label, samples },
       { headers: { 'Cache-Control': 'no-store' } });
   }
 
