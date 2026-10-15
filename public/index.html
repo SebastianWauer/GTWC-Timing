@@ -97,6 +97,14 @@
     </aside>
   </div>
 
+  <section id="race-analysis" class="race-analysis" aria-label="Rennverlauf">
+    <div class="ra-top"><strong>Rennverlauf</strong><div><button id="ra-position" class="ra-active">Positionen</button><button id="ra-gap">Zeitabstände</button><button id="ra-all">Alle Autos</button></div></div>
+    <div id="ra-status">Warte auf aufgezeichnete Timing-Daten …</div>
+    <div id="ra-legend"></div><canvas id="ra-canvas" height="320"></canvas>
+    <div class="ra-foot">Linien nach Zeitstempel. Zeitabstände sind offizielle Live-Gaps; bei überrundeten Autos bleibt die Lücke leer.</div>
+  </section>
+  <link rel="stylesheet" href="/css/race-analysis.css">
+  <script defer src="/js/race-analysis.js"></script>
   <!-- Scripts -->
   <script src="/js/colors.js?v=3"></script>
   <script src="/js/table.js?v=5"></script>
