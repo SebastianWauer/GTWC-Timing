@@ -339,11 +339,11 @@ export class TimingState {
 
 
 // Store sampled official ranking/gap values. Never infer gaps from lap times.
-// 10-second sampling reduces DO storage writes while retaining race history.
+// 30-second sampling reduces DO storage writes while retaining race history.
   async _captureRaceHistory(key, s) {
     if (!s.snapshot?.cars?.length) return;
     const now = Date.now();
-    if (now - (s.lastHistoryAt || 0) < 10000) return;
+    if (now - (s.lastHistoryAt || 0) < 30000) return;
     s.lastHistoryAt = now;
     const label = s.sessionLabel || '';
     if (s.historyLabel !== label) {
@@ -354,7 +354,7 @@ export class TimingState {
       const raw = String(c.gap ?? '').trim();
       const gap = !raw || raw === '-' ? (c.pos === 1 ? 0 : null)
         : /lap/i.test(raw) ? null
-        : /^\+?(?:\d+:)?\d+(?:\\.\d+)?$/.test(raw)
+        : /^\+?(?:\d+:)?\d+(?:\.\d+)?$/.test(raw)
           ? raw.replace(/^\+/, '').split(':').reduce((v, part) => v * 60 + Number(part), 0)
           : null;
       return { nr: c.nr, pos: Number(c.pos) || null,
@@ -363,7 +363,7 @@ export class TimingState {
         classGapRaw: c.classGap || '', inPit: !!c.inPit };
     });
     s.raceHistory.push({ t: now, cars });
-    // Maximum 720 samples = 2 hours at ten-second resolution in DO storage.
+    // Maximum 720 samples = 6 hours at thirty-second resolution in DO storage.
     if (s.raceHistory.length > 720) s.raceHistory.shift();
     // Persist in per-sample keys to avoid the 128KB single-value limit.
     await this.state.storage.put('rh:' + key + ':label', label);
